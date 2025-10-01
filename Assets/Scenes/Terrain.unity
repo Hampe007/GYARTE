@@ -256,8 +256,8 @@ MonoBehaviour:
   scriptInteractions: 1
   cpuEvaluateRipples: 0
   customMaterial: {fileID: 0}
-  startSmoothness: 0.91212076
-  endSmoothness: 0.830303
+  startSmoothness: 0.7612332
+  endSmoothness: 0.6794154
   smoothnessFadeStart: 100
   smoothnessFadeDistance: 500
   tessellation: 1
@@ -288,7 +288,7 @@ MonoBehaviour:
   waterMaskDebugMode: 0
   waterCurrentDebugMode: 0
   currentDebugMultiplier: 0.1
-  waterFoamDebugMode: 1
+  waterFoamDebugMode: 0
   underWater: 0
   volumeBounds: {fileID: 0}
   volumeDepth: 50
@@ -326,7 +326,7 @@ MonoBehaviour:
   foamSmoothness: 1
   simulationFoamAmount: 0.2
   supportSimulationFoamMask: 0
-  simulationFoamMask: {fileID: 0}
+  simulationFoamMask: {fileID: 10300, guid: 0000000000000000f000000000000000, type: 0}
   simulationFoamMaskExtent: {x: 100, y: 100}
   simulationFoamMaskOffset: {x: 0, y: 0}
   simulationFoamWindCurve:
@@ -373,7 +373,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   repetitionSize: 250
   largeOrientationValue: 0
-  largeWindSpeed: 90
+  largeWindSpeed: 250
   largeChaos: 0
   largeBand0Multiplier: 1
   largeBand0FadeMode: 1
@@ -383,11 +383,11 @@ MonoBehaviour:
   largeBand1FadeMode: 1
   largeBand1FadeStart: 300
   largeBand1FadeDistance: 800
-  ripples: 1
+  ripples: 0
   ripplesMotionMode: 0
   ripplesOrientationValue: 0
-  ripplesWindSpeed: 8
-  ripplesChaos: 0.8
+  ripplesWindSpeed: 0
+  ripplesChaos: 1
   ripplesFadeMode: 1
   ripplesFadeStart: 50
   ripplesFadeDistance: 200
