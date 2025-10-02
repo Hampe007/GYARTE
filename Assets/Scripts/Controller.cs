@@ -12,8 +12,8 @@ public class Controller : MonoBehaviour
     [Range(0f, 1f)] public float sensitivityY = 01f;
     public Vector2 pitchLimits = new Vector2(-85f, 85f);
     public float moveSpeed = 4.5f;
-    public float gravity = -9.81f;
     public float jumpHeight = 0f;
+    float gravity = -9.82f;
 
     CharacterController controller;
     PlayerInputSystem controls;
@@ -21,7 +21,7 @@ public class Controller : MonoBehaviour
     Vector2 lookInput;
     float pitch;
     float verticalVelocity;
-    const float sensitivityScale = 300f;
+    public int sensitivityScale = 1000;
 
     void Awake()
     {

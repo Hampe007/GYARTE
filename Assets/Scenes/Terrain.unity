@@ -230,7 +230,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &945646048
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -319,12 +319,12 @@ MonoBehaviour:
   deformationRes: 512
   foam: 1
   foamResolution: 512
-  foamPersistenceMultiplier: 0.5
-  foamCurrentInfluence: 0.6
+  foamPersistenceMultiplier: 0
+  foamCurrentInfluence: 0.366
   foamColor: {r: 1, g: 1, b: 1, a: 1}
   foamTextureTiling: 0.15
   foamSmoothness: 1
-  simulationFoamAmount: 0.2
+  simulationFoamAmount: 1
   supportSimulationFoamMask: 0
   simulationFoamMask: {fileID: 10300, guid: 0000000000000000f000000000000000, type: 0}
   simulationFoamMaskExtent: {x: 100, y: 100}
@@ -333,25 +333,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Curve:
     - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.2
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.3
+      time: 0.008333333
       value: 1
       inSlope: 0
       outSlope: 0
@@ -360,8 +342,26 @@ MonoBehaviour:
       inWeight: 0
       outWeight: 0
     - serializedVersion: 3
-      time: 1
+      time: 0.20833334
       value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.39999998
+      value: 0.012698472
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1.0999999
+      value: 0.012698472
       inSlope: 0
       outSlope: 0
       tangentMode: 0
@@ -373,20 +373,20 @@ MonoBehaviour:
     m_RotationOrder: 4
   repetitionSize: 250
   largeOrientationValue: 0
-  largeWindSpeed: 250
-  largeChaos: 0
-  largeBand0Multiplier: 1
+  largeWindSpeed: 0
+  largeChaos: 0.85
+  largeBand0Multiplier: 0
   largeBand0FadeMode: 1
   largeBand0FadeStart: 1500
   largeBand0FadeDistance: 3000
-  largeBand1Multiplier: 1
+  largeBand1Multiplier: 0
   largeBand1FadeMode: 1
   largeBand1FadeStart: 300
   largeBand1FadeDistance: 800
-  ripples: 0
+  ripples: 1
   ripplesMotionMode: 0
   ripplesOrientationValue: 0
-  ripplesWindSpeed: 0
+  ripplesWindSpeed: 15
   ripplesChaos: 1
   ripplesFadeMode: 1
   ripplesFadeStart: 50
@@ -765,7 +765,7 @@ Transform:
   m_GameObject: {fileID: 1489488760}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.04724121, y: 0.27586365, z: -0.38815308}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -874,7 +874,7 @@ Transform:
   m_GameObject: {fileID: 2050203917}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 621.1528, y: 82.42614, z: 295.68814}
+  m_LocalPosition: {x: 1548.9, y: 420.13, z: 4493}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -906,7 +906,7 @@ CharacterController:
   m_StepOffset: 0.3
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0.26, z: -0.39}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &2050203921
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -923,9 +923,9 @@ MonoBehaviour:
   sensitivityX: 0.1
   sensitivityY: 0.1
   pitchLimits: {x: -85, y: 85}
-  moveSpeed: 4.5
-  gravity: -9.82
-  jumpHeight: 0
+  moveSpeed: 10
+  jumpHeight: 10
+  sensitivityScale: 1000
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
