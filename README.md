@@ -1,2 +1,2 @@
 # GYARTE
-GYARTE
+![Unity version](https://img.shields.io/badge/Unity-6000.0.58f1-black?logo=unity) ![Render Pipeline](https://img.shields.io/badge/HDRP-17.0.4-0A2DFF) ![Networking](https://img.shields.io/badge/Networking-Mirror%20%2B%20FizzySteamworks-blue)
