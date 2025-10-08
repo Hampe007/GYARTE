@@ -768,7 +768,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 1401678706}
         m_TargetAssemblyTypeName: SteamLobby, Assembly-CSharp
         m_MethodName: HostLobby
         m_Mode: 1
@@ -1935,7 +1935,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 174892228}
         m_TargetAssemblyTypeName: LobbiesListManager, Assembly-CSharp
         m_MethodName: GetListOfLobbies
         m_Mode: 1
@@ -2908,6 +2908,17 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_IsOn: 1
+--- !u!114 &1401678706 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6992040905183104040, guid: 05b448306cc13394eaf92da31964315d, type: 3}
+  m_PrefabInstance: {fileID: 5581116922034808821}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 563d5ba2a32b3cf4c9d3c0229eec3a43, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1579445243
 GameObject:
   m_ObjectHideFlags: 0

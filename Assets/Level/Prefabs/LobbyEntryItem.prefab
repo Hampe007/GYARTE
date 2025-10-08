@@ -184,13 +184,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 1149427553707521781}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9be6f66f10c93b347a32706aa233a856, type: 3}
+  m_Script: {fileID: 11500000, guid: 6f7f2e4608f73f742a51cc91eae1fd8e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   lobbyID:
     m_SteamID: 0
   lobbyName: 
   lobbyNameText: {fileID: 5655545495494559178}
+  visibilityText: {fileID: 0}
 --- !u!1 &1995218003313398120
 GameObject:
   m_ObjectHideFlags: 0
