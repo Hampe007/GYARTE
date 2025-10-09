@@ -131,7 +131,7 @@ GameObject:
   - component: {fileID: 233718533}
   - component: {fileID: 233718532}
   m_Layer: 0
-  m_Name: Terrain_(5000.00, 0.00, 0.00)
+  m_Name: Terrain_East
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -319,7 +319,7 @@ GameObject:
   - component: {fileID: 747281822}
   - component: {fileID: 747281821}
   m_Layer: 0
-  m_Name: Terrain_(-5000.00, 0.00, -5000.00)
+  m_Name: Terrain_SouthWest
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -703,7 +703,7 @@ GameObject:
   - component: {fileID: 1296422986}
   - component: {fileID: 1296422985}
   m_Layer: 0
-  m_Name: Terrain_(0.00, 0.00, 5000.00)
+  m_Name: Terrain_North
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1138,7 +1138,7 @@ GameObject:
   - component: {fileID: 1550530145}
   - component: {fileID: 1550530144}
   m_Layer: 0
-  m_Name: Terrain_(5000.00, 0.00, 5000.00)
+  m_Name: Terrain_NorthEast
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1231,7 +1231,7 @@ GameObject:
   - component: {fileID: 1575644654}
   - component: {fileID: 1575644653}
   m_Layer: 0
-  m_Name: Terrain_(-5000.00, 0.00, 5000.00)
+  m_Name: Terrain_NorthWest
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1324,7 +1324,7 @@ GameObject:
   - component: {fileID: 1970296398}
   - component: {fileID: 1970296397}
   m_Layer: 0
-  m_Name: Terrain_(0.00, 0.00, -5000.00)
+  m_Name: Terrain_South
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1496,7 +1496,7 @@ GameObject:
   - component: {fileID: 2071708100}
   - component: {fileID: 2071708099}
   m_Layer: 0
-  m_Name: Terrain_(5000.00, 0.00, -5000.00)
+  m_Name: Terrain_SouthEast
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1589,7 +1589,7 @@ GameObject:
   - component: {fileID: 2116540825}
   - component: {fileID: 2116540824}
   m_Layer: 0
-  m_Name: Terrain_(-5000.00, 0.00, 0.00)
+  m_Name: Terrain_West
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1681,8 +1681,8 @@ SceneRoots:
   - {fileID: 1296422987}
   - {fileID: 233718534}
   - {fileID: 1970296399}
-  - {fileID: 2071708101}
   - {fileID: 2116540826}
-  - {fileID: 747281823}
-  - {fileID: 1575644655}
   - {fileID: 1550530146}
+  - {fileID: 1575644655}
+  - {fileID: 2071708101}
+  - {fileID: 747281823}
