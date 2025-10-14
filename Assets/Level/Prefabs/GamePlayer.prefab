@@ -191,7 +191,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   sceneId: 0
-  _assetId: 2259521354
+  _assetId: 2686515700
   serverOnly: 0
   visibility: 0
   hasSpawned: 0
@@ -262,19 +262,19 @@ MonoBehaviour:
   m_GameObject: {fileID: 3981346026934122420}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0680920193c219447ab5417603da37bf, type: 3}
+  m_Script: {fileID: 11500000, guid: 8487ed11056894f4dbf7e649ce495dcd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
-  moveSpeed: 5
+  moveSpeed: 4.6
   sprintMultiplier: 1.5
   crouchMultiplier: 0.6
   gravity: 19.62
   jumpVelocity: 5.8
   rotationSpeed: 720
-  inputActions: {fileID: -944628639613478452, guid: a34b72e5c53ac5846824e9054ba53cc0, type: 3}
+  inputActions: {fileID: -944628639613478452, guid: 681c85fdb666c18468091285b0e3aed0, type: 3}
   moveDeadzone: 0.1
   snapThreshold: 0.5
   historySize: 32

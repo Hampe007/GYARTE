@@ -6,9 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="27d5728e-e1d4-4141-a501-683bb14e2ba0" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Level/Prefabs/LobbyEntryItem.prefab" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Prefabs/LobbyEntryItem.prefab" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Prefabs/PlayerListItem.prefab" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Prefabs/PlayerListItem.prefab" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Prefabs/SteamManager.prefab" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Prefabs/SteamManager.prefab" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Lobby.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Lobby.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Packages/manifest.json" beforeDir="false" afterPath="$PROJECT_DIR$/Packages/manifest.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Packages/packages-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/Packages/packages-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ProjectSettings/ProjectVersion.txt" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/ProjectVersion.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,7 +65,7 @@
 }</component>
   <component name="RunManager" selected="Attach to Unity Editor.Attach to Unity Editor">
     <configuration name="Start Unity" type="RunUnityExe" factoryName="Unity Executable">
-      <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe" />
+      <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\6000.0.59f2\Editor\Unity.exe" />
       <option name="PROGRAM_PARAMETERS" value="-projectPath C:\Users\Hampus.carlstromsva\Documents\GitHub\GYARTE -debugCodeOptimization" />
       <option name="WORKING_DIRECTORY" value="C:\Users\Hampus.carlstromsva\Documents\GitHub\GYARTE" />
       <option name="PASS_PARENT_ENVS" value="1" />
@@ -75,7 +77,7 @@
       <method v="2" />
     </configuration>
     <configuration name="Unit Tests (batch mode)" type="RunUnityExe" factoryName="Unity Executable">
-      <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\6000.0.58f2\Editor\Unity.exe" />
+      <option name="EXE_PATH" value="C:\Program Files\Unity\Hub\Editor\6000.0.59f2\Editor\Unity.exe" />
       <option name="PROGRAM_PARAMETERS" value="-runTests -batchmode -projectPath C:\Users\Hampus.carlstromsva\Documents\GitHub\GYARTE -testResults Logs/results.xml -logFile Logs/Editor.log -testPlatform EditMode -debugCodeOptimization" />
       <option name="WORKING_DIRECTORY" value="C:\Users\Hampus.carlstromsva\Documents\GitHub\GYARTE" />
       <option name="PASS_PARENT_ENVS" value="1" />
@@ -114,6 +116,9 @@
       <option name="useMixedMode" value="false" />
       <method v="2" />
     </configuration>
+    <configuration name="Attach to Device" type="UnityDevicePlayer" factoryName="UnityAttachToDevicePlayer">
+      <method v="2" />
+    </configuration>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -126,6 +131,12 @@
       <workItem from="1759400477927" duration="1186000" />
       <workItem from="1759925750070" duration="427000" />
       <workItem from="1760007216395" duration="530000" />
+      <workItem from="1760445807419" duration="13000" />
+      <workItem from="1760445972812" duration="7000" />
+      <workItem from="1760446018618" duration="54000" />
+      <workItem from="1760446559664" duration="537000" />
+      <workItem from="1760447168107" duration="182000" />
+      <workItem from="1760447724630" duration="555000" />
     </task>
     <servers />
   </component>
@@ -134,6 +145,7 @@
   </component>
   <component name="UnityProjectConfiguration" hasMinimizedUI="true" />
   <component name="UnityProjectDiscoverer">
+    <option name="hasUnityReference" value="true" />
     <option name="unityProject" value="true" />
     <option name="unityProjectFolder" value="true" />
   </component>

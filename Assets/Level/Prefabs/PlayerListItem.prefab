@@ -55,9 +55,9 @@ MonoBehaviour:
   PlayerName: 
   connectionID: 0
   PlayerSteamID: 0
-  playerNameText: {fileID: 0}
-  playerIcon: {fileID: 0}
-  playerReadyText: {fileID: 0}
+  playerNameText: {fileID: 4204547997891454259}
+  playerIcon: {fileID: 1146847329163207650}
+  playerReadyText: {fileID: 7147251111353970484}
   ready: 0
 --- !u!1 &4679317609562854446
 GameObject:
