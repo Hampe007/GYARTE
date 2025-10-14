@@ -18,6 +18,7 @@ public sealed class TileGridGizmo : MonoBehaviour
     public Terrain[] manualTerrains;
 
     [Header("Grid")]
+    public TileSliceSettings settings;
     [Min(1f)] public float tileSizeMeters = 250f;
     [Tooltip("Offset the boxes to match each terrain's origin (recommended: leave at 0,0,0).")]
     public Vector3 worldOffset = Vector3.zero;
@@ -66,28 +67,67 @@ public sealed class TileGridGizmo : MonoBehaviour
             if (t == null || t.terrainData == null) continue;
 
             var td = t.terrainData;
-            var size = td.size;
-            int tilesX = Mathf.Max(1, Mathf.CeilToInt(size.x / tileSizeMeters));
-            int tilesY = Mathf.Max(1, Mathf.CeilToInt(size.z / tileSizeMeters));
+            Vector3 size = td.size;
+            string label = System.Text.RegularExpressions.Regex.Replace(t.name, @"[^A-Za-z0-9_\-]", "_");
+            Vector3 origin = t.transform.position;
 
-            var tileSize = new Vector3(size.x / tilesX, size.y, size.z / tilesY);
+            int tilesX, tilesY;
+            float tileSizeX, tileSizeY;
+
+            if (settings != null && settings.TryGet(label, out var res))
+            {
+                tilesX = res.tilesX;
+                tilesY = res.tilesY;
+                tileSizeX = res.tileSizeX;
+                tileSizeY = res.tileSizeY;
+                origin = res.origin;
+            }
+            else
+            {
+                float desired = tileSizeMeters;
+                bool evenFit = true;
+                bool square = true;
+
+                if (!evenFit)
+                {
+                    tilesX = Mathf.Max(1, Mathf.CeilToInt(size.x / desired));
+                    tilesY = Mathf.Max(1, Mathf.CeilToInt(size.z / desired));
+                }
+                else
+                {
+                    tilesX = Mathf.Max(1, Mathf.RoundToInt(size.x / desired));
+                    tilesY = Mathf.Max(1, Mathf.RoundToInt(size.z / desired));
+                    if (square)
+                    {
+                        float fitX = size.x / tilesX;
+                        float fitY = size.z / tilesY;
+                        float s = Mathf.Min(fitX, fitY);
+                        tilesX = Mathf.Max(1, Mathf.RoundToInt(size.x / s));
+                        tilesY = Mathf.Max(1, Mathf.RoundToInt(size.z / s));
+                    }
+                }
+
+                tileSizeX = size.x / tilesX;
+                tileSizeY = size.z / tilesY;
+            }
+
+            Vector3 drawOrigin = origin + worldOffset;
+            var tileSize = new Vector3(tileSizeX, size.y, tileSizeY);
             float gizmoHeight = Mathf.Max(1f, size.y * heightRatio);
-
-            var origin = t.transform.position + worldOffset;
 
             for (int y = 0; y < tilesY; y++)
             {
                 for (int x = 0; x < tilesX; x++)
                 {
                     var min = new Vector3(
-                        origin.x + x * tileSize.x,
-                        origin.y,
-                        origin.z + y * tileSize.z
+                        drawOrigin.x + x * tileSize.x,
+                        drawOrigin.y,
+                        drawOrigin.z + y * tileSize.z
                     );
 
                     var center = new Vector3(
                         min.x + tileSize.x * 0.5f,
-                        origin.y + gizmoHeight * 0.5f,
+                        drawOrigin.y + gizmoHeight * 0.5f,
                         min.z + tileSize.z * 0.5f
                     );
 

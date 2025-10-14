@@ -1,8 +1,3 @@
-// Assets/Scripts/Tiles/Editor/TileSceneGenerator.cs
-// Unity 2021+ / Unity 6000 compatible
-// Multi-terrain slice + non-destructive re-slice, with safe snapshots.
-// BACK UP / commit before large operations.
-
 #if UNITY_EDITOR
 using System;
 using System.IO;
@@ -15,16 +10,29 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
+using System.Text;
 
 public sealed class TileSceneGenerator : EditorWindow
 {
-    // ===== UI / runtime guard =====
+    // UI / runtime guard
     private bool _isRunning = false;
     private Stopwatch _globalTimer;
+    
+    private readonly List<string> _changedTerrains = new List<string>();
+    private readonly StringBuilder _terrainLog = new StringBuilder(256);
+    
+    // Per-terrain change trackers (reset per terrain)
+    private bool _changedHeights, _changedAlpha, _changedDetails, _changedTrees;
+    private int  _treesAdded, _treesRemoved, _treesModifiedTiles;
+    
+    // Per-run final summary (reset once per run)
+    private readonly Dictionary<string, string> _finalContentSummary = new Dictionary<string, string>(32);
+    private readonly Dictionary<string, string> _gizmoStatus = new Dictionary<string, string>(32);
 
     [SerializeField] private TileSliceSettings settings;
+    [SerializeField] private string folder = "Assets/Scripts/Tiles";
     
-    // ===== Source (multi-terrain) =====
+    // Source (multi-terrain)
     [Header("Source Terrains")]
     [SerializeField] private bool autoCollectTerrains = true;
     [SerializeField] private string terrainNamePrefix = "Terrain_";
@@ -34,7 +42,7 @@ public sealed class TileSceneGenerator : EditorWindow
     private TerrainData _srcTD;
     private string _currentTerrainLabel = "";
 
-    // ===== Grid (meters) =====
+    // Grid (meters)
     [Header("Grid (auto-calculated from meters)")]
     [SerializeField] private float tileSizeMeters = 250f;
     [HideInInspector] private int tilesX;
@@ -43,7 +51,7 @@ public sealed class TileSceneGenerator : EditorWindow
     [SerializeField] private bool evenFitNoRemainder = true; // adjust size so terrain divides evenly
     [SerializeField] private bool forceSquareTiles   = true; // when even-fit, make tiles perfect squares
 
-    // ===== Output =====
+    // Output
     [Header("Output")]
     [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
     [SerializeField] private string outputFolder = "Assets/Scenes/Tiles";
@@ -53,25 +61,25 @@ public sealed class TileSceneGenerator : EditorWindow
     private string _outputScenesFolder;
     private string _outputDataFolder;
 
-    // ===== Copy Channels =====
+    // Copy Channels
     [Header("Copy Channels")]
     [SerializeField] private bool copyHeights = true;
     [SerializeField] private bool copyAlphamaps = false;
     [SerializeField] private bool copyDetails = false;
     [SerializeField] private bool copyTrees = false;
 
-    // ===== Reslice Options =====
+    // Reslice Options
     [Header("Reslice Options")]
-    [SerializeField] private bool nonDestructiveReslice = true;    // update TerrainData in existing scenes, keep other objects
-    [SerializeField] private bool onlyUpdateIfChanged = false;     // small speed-up by skipping identical tiles (height-only compare)
+    [SerializeField] private bool nonDestructiveReslice = true; // update TerrainData in existing scenes, keep other objects
+    [SerializeField] private bool onlyUpdateIfChanged = false; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
 
-    // ===== Snapshot type (do NOT hold Terrain refs while running) =====
+    // Snapshot type (do NOT hold Terrain refs while running)
     private sealed class TerrainSnapshot
     {
-        public string label;      // sanitized terrain name
-        public TerrainData data;  // stable asset ref
-        public Vector3 origin;    // cached world position
+        public string label; // sanitized terrain name
+        public TerrainData data; // stable asset ref
+        public Vector3 origin; // cached world position
     }
 
     [MenuItem("Tools/Tiles/Tile Scene Generator & Reslicer")]
@@ -79,6 +87,7 @@ public sealed class TileSceneGenerator : EditorWindow
 
     private void OnGUI()
     {
+        EnsureSettingsAsset();
         EditorGUILayout.LabelField("Slice terrains → tile scenes, and safely re-slice later.", EditorStyles.boldLabel);
         EditorGUILayout.Space(6);
 
@@ -106,8 +115,9 @@ public sealed class TileSceneGenerator : EditorWindow
         {
             if (GUILayout.Button("Auto-fill now (Terrain.activeTerrains)"))
             {
+                ClearConsole();
                 var previewList = CollectSnapshots(onlySnapshotList: true);
-                Debug.Log($"[TileSceneGenerator] Found {previewList.Count} terrains: {string.Join(", ", previewList.Select(s => s.label))}");
+                Debug.Log($"[TileSceneGenerator] Found {previewList.Count} terrain(s): {string.Join(", ", previewList.Select(s => s.label))}");
             }
         }
 
@@ -127,52 +137,35 @@ public sealed class TileSceneGenerator : EditorWindow
         }
         
         EditorGUILayout.LabelField("Grid Behaviour", EditorStyles.boldLabel);
-        
         EditorGUILayout.Space(6);
+
         tileSizeMeters = EditorGUILayout.FloatField(
             new GUIContent(
                 "Tile Size (meters)",
-                "Desired approximate tile size in world meters. " +
-                "If 'Even Fit' is OFF, this exact size is used, and the edges may end up with smaller leftover tiles. " +
-                "If 'Even Fit' is ON, the tool slightly adjusts this size so the terrain divides evenly."
+                "Desired tile size in world meters. " +
+                "If 'Even Fit' is OFF, edges may have smaller leftover tiles. " +
+                "If 'Even Fit' is ON, the size adjusts to divide evenly."
             ),
             tileSizeMeters
         );
 
-        float uiTileMeters = settings ? settings.tileSizeMeters : tileSizeMeters;
-        uiTileMeters = EditorGUILayout.FloatField(
-            new GUIContent("Tile Size (meters)",
-                "Desired approximate tile size. With Even Fit OFF this exact size is used; " +
-                "with Even Fit ON it's adjusted to divide the terrain evenly."),
-            uiTileMeters);
-
-        bool uiEvenFit = settings ? settings.evenFitNoRemainder : evenFitNoRemainder;
-        uiEvenFit = EditorGUILayout.ToggleLeft(
-            new GUIContent("Even Fit (no remainder tiles)",
-                "Adjust tile size slightly so width/height divide evenly into whole tiles. " +
-                "Prevents thin edge strips."),
-            uiEvenFit);
+        evenFitNoRemainder = EditorGUILayout.ToggleLeft(
+            new GUIContent(
+                "Even Fit (no remainder tiles)",
+                "Adjust tile size slightly so width/height divide evenly into whole tiles."
+            ),
+            evenFitNoRemainder
+        );
 
         using (new EditorGUI.IndentLevelScope())
         {
-            bool uiSquare = settings ? settings.forceSquareTiles : forceSquareTiles;
-            uiSquare = EditorGUILayout.ToggleLeft(
-                new GUIContent("Force Square Tiles",
-                    "When Even Fit is on, makes each tile square (same X/Z size)."),
-                uiSquare);
-
-            if (settings) settings.forceSquareTiles = uiSquare; else forceSquareTiles = uiSquare;
-        }
-
-        if (settings)
-        {
-            settings.tileSizeMeters     = uiTileMeters;
-            settings.evenFitNoRemainder = uiEvenFit;
-        }
-        else
-        {
-            tileSizeMeters     = uiTileMeters;
-            evenFitNoRemainder = uiEvenFit;
+            forceSquareTiles = EditorGUILayout.ToggleLeft(
+                new GUIContent(
+                    "Force Square Tiles",
+                    "When Even Fit is ON, makes each tile square (same X/Z size)."
+                ),
+                forceSquareTiles
+            );
         }
         
         copyHeights = EditorGUILayout.Toggle(
@@ -312,10 +305,14 @@ public sealed class TileSceneGenerator : EditorWindow
         return sourceTerrains != null && sourceTerrains.Any(t => t != null);
     }
 
-    // --------- MAIN ORCHESTRATOR (safe snapshots) ---------
+    // MAIN ORCHESTRATOR (safe snapshots)
     private void RunForAllTerrains()
     {
         _isRunning = true;
+        _changedTerrains.Clear();
+        _finalContentSummary.Clear();
+        _gizmoStatus.Clear();
+        ClearConsole();
         _globalTimer = Stopwatch.StartNew(); // start total timer
         try
         {
@@ -327,9 +324,14 @@ public sealed class TileSceneGenerator : EditorWindow
 
             string originalOutputRoot = outputFolder;
 
-            // 🕒 loop through each terrain and time individually
+            
+            EnsureSettingsAsset();
+            // loop through each terrain and time individually
             foreach (var snap in snapshots)
             {
+                _terrainLog.Clear();
+                _changedHeights = _changedAlpha = _changedDetails = _changedTrees = false;
+                _treesAdded = _treesRemoved = _treesModifiedTiles = 0;
                 var terrainTimer = Stopwatch.StartNew();
 
                 _currentTerrainLabel = snap.label;
@@ -338,24 +340,105 @@ public sealed class TileSceneGenerator : EditorWindow
 
                 outputFolder = subfolderPerTerrain ? $"{originalOutputRoot}/{_currentTerrainLabel}" : originalOutputRoot;
 
+                _gizmoStatus[_currentTerrainLabel] = settings ? "unchanged" : "n/a (no TileSliceSettings)";
+                
                 ComputeGridFromMeters();
                 ValidateInputs();
+                if (settings && settings.TryGet(_currentTerrainLabel, out var r))
+                {
+                    r.origin = cachedOrigin; 
+                    EditorUtility.SetDirty(settings);
+                }
                 RunSliceOrReslice(cachedOrigin);
 
                 terrainTimer.Stop(); // stop individual timer
-                Debug.Log($"[TileSceneGenerator] Finished {_currentTerrainLabel} in {terrainTimer.Elapsed.TotalSeconds:F1} seconds.");
+                _terrainLog.AppendLine($"Finished {_currentTerrainLabel} in {terrainTimer.Elapsed.TotalSeconds:F1} seconds.");
+                var changedKinds = new List<string>(4);
+                if (_changedHeights)  changedKinds.Add("heights");
+                if (_changedAlpha)    changedKinds.Add("splatmaps");
+                if (_changedDetails)  changedKinds.Add("details");
+                if (_changedTrees)
+                {
+                    var parts = new List<string>(3);
+                    if (_treesAdded   > 0) parts.Add($"added { _treesAdded }");
+                    if (_treesRemoved > 0) parts.Add($"removed { _treesRemoved }");
+                    if (_treesModifiedTiles > 0) parts.Add($"modified ({_treesModifiedTiles} tile(s))");
+                    changedKinds.Add(parts.Count > 0 ? $"trees: {string.Join(", ", parts)}" : "trees");
+                }
+                
+                string contentLine;
+                if (changedKinds.Count > 0)
+                {
+                    contentLine = $"Content changed → {string.Join(", ", changedKinds)}.";
+                    _terrainLog.AppendLine(contentLine);
+                }
+                else
+                {
+                    contentLine = "No content changes.";
+                    _terrainLog.AppendLine(contentLine);
+                }
+                
+                // Save per-terrain summary for the final run report
+                _finalContentSummary[_currentTerrainLabel] = contentLine;
 
+                // Emit ONE log for this terrain (includes grid line, gizmo status, finish time, and the change summary)
+                Debug.Log(_terrainLog.ToString());
+
+                // restore output root if you temporarily changed it
                 outputFolder = originalOutputRoot;
             }
         }
         finally
         {
-            _globalTimer.Stop(); // stop total timer
+            if (_globalTimer != null && _globalTimer.IsRunning)
+                _globalTimer.Stop();
+
             EditorUtility.ClearProgressBar();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"[TileSceneGenerator] ✅ All terrains processed in {_globalTimer.Elapsed.TotalSeconds:F1} seconds total.");
+            // --- Final run summary (single log) ---
+            var sb = new StringBuilder(512);
+            sb.AppendLine("[TileSceneGenerator] Final summary:");
+            sb.AppendLine($"• All terrains processed in {_globalTimer.Elapsed.TotalSeconds:F1} seconds total.");
+
+            if (_changedTerrains.Count > 0)
+                sb.AppendLine($"• Gizmo updated for {_changedTerrains.Count} terrain(s): {string.Join(", ", _changedTerrains)}");
+            else
+                sb.AppendLine("• Gizmo data unchanged for all terrains.");
+
+            // Determine master terrain and compass ordering (clockwise from North)
+            var compassLabels = OrderLabelsClockwiseFromNorth(settings, null);
+
+            // Collect for alignment (compute max widths for label and content)
+            var rows = new List<(string Label, string Content, string Gizmo)>();
+            int maxLabelLen = 0;
+            int maxContentLen = 0;
+
+            foreach (var label in compassLabels)
+            {
+                if (!_finalContentSummary.TryGetValue(label, out var content))
+                    continue;
+
+                var gizmo = _gizmoStatus.TryGetValue(label, out var gs) ? gs : "n/a";
+                maxLabelLen   = Mathf.Max(maxLabelLen,   label.Length);
+                maxContentLen = Mathf.Max(maxContentLen, content.Length);
+                rows.Add((label, content, gizmo));
+            }
+
+            // Print aligned lines (plain text, clean columns)
+            foreach (var row in rows)
+            {
+                string labelPadded   = row.Label.PadRight(maxLabelLen);
+                string contentPadded = row.Content.PadRight(maxContentLen + 2);
+                sb.AppendLine($"  • {labelPadded}: {contentPadded}(gizmo {row.Gizmo})");
+            }
+
+            Debug.Log(sb.ToString());
+
+            _changedTerrains.Clear();
+            _finalContentSummary.Clear();
+            _gizmoStatus.Clear();
             _isRunning = false;
         }
     }
@@ -403,61 +486,79 @@ public sealed class TileSceneGenerator : EditorWindow
     }
 
     // --- Compute tilesX/tilesY from meters for the CURRENT snapshot ---
-    // --- Compute tilesX/tilesY from meters for the CURRENT snapshot ---
     private void ComputeGridFromMeters()
     {
-        if (_srcTD == null)
-            throw new InvalidOperationException("Current Terrain has no TerrainData.");
+        if (_srcTD == null) throw new InvalidOperationException("Current Terrain has no TerrainData.");
 
-        if (tileSizeMeters <= 0f)
-            throw new ArgumentOutOfRangeException(nameof(tileSizeMeters), "Tile Size (meters) must be > 0.");
+        float desiredMeters = tileSizeMeters;
+        bool evenFit = evenFitNoRemainder;
+        bool forceSquares = forceSquareTiles;
 
-        var sz = _srcTD.size; // world meters
+        if (desiredMeters <= 0f) throw new ArgumentOutOfRangeException(nameof(desiredMeters), "Tile Size (meters) must be > 0.");
 
-        if (!evenFitNoRemainder)
+        var sz = _srcTD.size;
+
+        int nx, ny;
+        float finalX, finalY;
+
+        if (!evenFit)
         {
-            // MODE A: Exact meters (may produce smaller edge strips)
-            tilesX = Mathf.Max(1, Mathf.CeilToInt(sz.x / tileSizeMeters));
-            tilesY = Mathf.Max(1, Mathf.CeilToInt(sz.z / tileSizeMeters));
-            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EXACT METERS mode → {tilesX}×{tilesY} tiles at {tileSizeMeters:0.##} m (edges may be smaller).");
-            return;
-        }
-
-        // MODE B: Even fit (adjust tile size so terrain divides perfectly)
-        // First pick a count close to the desired size
-        int nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / tileSizeMeters));
-        int ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / tileSizeMeters));
-
-        // Base even-fit sizes per axis
-        float fitX = sz.x / nx;
-        float fitY = sz.z / ny;
-
-        if (forceSquareTiles)
-        {
-            // Use one square size s, recompute counts so both axes are multiples of s
-            float s = Mathf.Min(fitX, fitY);                 // stay near desired size
-            nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / s));
-            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
-            // snap s to the final exact division
-            s  = sz.x / nx;
-            // Make sure Y also lines up with the same s
-            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
-            // finalize counts
-            tilesX = nx;
-            tilesY = ny;
-
-            tileSizeMeters = s; // keep UI preview honest
-            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EVEN FIT + SQUARE → {tilesX}×{tilesY} tiles at {tileSizeMeters:0.##} m (perfect grid).");
+            nx = Mathf.Max(1, Mathf.CeilToInt(sz.x / desiredMeters));
+            ny = Mathf.Max(1, Mathf.CeilToInt(sz.z / desiredMeters));
+            finalX = sz.x / nx;
+            finalY = sz.z / ny;
         }
         else
         {
-            // Even fit, but allow rectangular tiles (still no edge remainders)
-            tilesX = nx;
-            tilesY = ny;
-            // Update UI tile size readout to the exact even-fit per axis (use X as representative)
-            tileSizeMeters = fitX;
-            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EVEN FIT (rect allowed) → {tilesX}×{tilesY} tiles at ~{fitX:0.##}×{fitY:0.##} m.");
+            nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / desiredMeters));
+            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / desiredMeters));
+            finalX = sz.x / nx;
+            finalY = sz.z / ny;
+
+            if (forceSquares)
+            {
+                float s = Mathf.Min(finalX, finalY);
+                nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / s));
+                ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
+                finalX = sz.x / nx;
+                finalY = sz.z / ny;
+            }
         }
+        tilesX = nx;
+        tilesY = ny;
+
+        // Persist exact results (origin filled later)
+        if (settings)
+        {
+            bool changed = true;
+            if (settings.TryGet(_currentTerrainLabel, out var old))
+            {
+                changed =
+                    !Mathf.Approximately(old.size.x, sz.x) ||
+                    !Mathf.Approximately(old.size.z, sz.z) ||
+                    old.tilesX != tilesX ||
+                    old.tilesY != tilesY ||
+                    !Mathf.Approximately(old.tileSizeX, sz.x / tilesX) ||
+                    !Mathf.Approximately(old.tileSizeY, sz.z / tilesY);
+            }
+
+            if (changed)
+            {
+                settings.Upsert(_currentTerrainLabel, Vector3.zero, sz, tilesX, tilesY, finalX, finalY);
+                EditorUtility.SetDirty(settings);
+                _changedTerrains.Add(_currentTerrainLabel);
+
+                _terrainLog.AppendLine($"Gizmo data updated for '{_currentTerrainLabel}' → {tilesX}×{tilesY} tiles @ {finalX:0.##}×{finalY:0.##} m each.");
+                _gizmoStatus[_currentTerrainLabel] = "updated";
+            }
+            else
+            {
+                _terrainLog.AppendLine($"Gizmo data unchanged for '{_currentTerrainLabel}'.");
+                _gizmoStatus[_currentTerrainLabel] = "unchanged"; // <-- important
+            }
+        }
+
+        _terrainLog.AppendLine($"{_currentTerrainLabel}: {tilesX}×{tilesY} tiles, size {finalX:0.##}×{finalY:0.##} m (desired {desiredMeters:0.##}, evenFit={evenFit}, squares={forceSquares}).");
     }
 
     private void ValidateInputs()
@@ -489,6 +590,13 @@ public sealed class TileSceneGenerator : EditorWindow
         if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
             EnsureFolder(parent);
         AssetDatabase.CreateFolder(parent, leaf);
+    }
+    
+    private static void ClearConsole()
+    {
+        var logEntries = Type.GetType("UnityEditor.LogEntries, UnityEditor.dll");
+        var clearMethod = logEntries?.GetMethod("Clear", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+        clearMethod?.Invoke(null, null);
     }
 
     // -------- core slicing (uses only cached data) --------
@@ -539,17 +647,58 @@ public sealed class TileSceneGenerator : EditorWindow
                     string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{_currentTerrainLabel}_{tx}_{ty}.asset";
                     var existingTD = AssetDatabase.LoadAssetAtPath<TerrainData>(tdPath);
 
-                    if (onlyUpdateIfChanged && existingTD != null && copyHeights)
+                    // Detect channel changes (only for the channels we copy)
+                    bool heightsChanged = false, alphaChanged = false, detailsChanged = false, treesChanged = false;
+                    int treesAdded = 0, treesRemoved = 0; bool treesModified = false;
+
+                    if (existingTD != null)
                     {
-                        if (HeightsEqual(existingTD, newTD))
+                        if (copyHeights)
+                            heightsChanged = !HeightsEqual(existingTD, newTD);
+
+                        if (copyAlphamaps && _srcTD.alphamapLayers > 0)
+                            alphaChanged = !AlphamapsEqual(existingTD, newTD);
+
+                        if (copyDetails && (_srcTD.detailPrototypes?.Length ?? 0) > 0)
+                            detailsChanged = !DetailsEqual(existingTD, newTD);
+
+                        if (copyTrees && (_srcTD.treePrototypes?.Length ?? 0) > 0)
                         {
-                            UnityEngine.Object.DestroyImmediate(newTD);
-                            newTD = existingTD;
+                            bool treesEqual = TreesEqualAndDeltas(existingTD, newTD, out treesAdded, out treesRemoved, out bool modified);
+                            treesChanged = !treesEqual;
+                            treesModified = modified;
                         }
                     }
 
-                    if (existingTD == null || newTD != existingTD)
-                        SaveOrReplaceTerrainDataAsset(tdPath, newTD, existingTD);
+                    // Update per-terrain summary flags (used for the single per-terrain log later)
+                    _changedHeights  |= heightsChanged;
+                    _changedAlpha    |= alphaChanged;
+                    _changedDetails  |= detailsChanged;
+                    _changedTrees    |= treesChanged;
+                    if (treesAdded   > 0) _treesAdded        += treesAdded;
+                    if (treesRemoved > 0) _treesRemoved      += treesRemoved;
+                    if (treesModified)    _treesModifiedTiles += 1;
+
+                    // Decide whether to write asset
+                    bool anyChannelChanged = heightsChanged || alphaChanged || detailsChanged || treesChanged;
+
+                    if (existingTD == null)
+                    {
+                        SaveOrReplaceTerrainDataAsset(tdPath, newTD, null);
+                    }
+                    else
+                    {
+                        if (onlyUpdateIfChanged && !anyChannelChanged)
+                        {
+                            // Nothing changed in the channels we care about → reuse existing, discard new
+                            UnityEngine.Object.DestroyImmediate(newTD);
+                            newTD = existingTD;
+                        }
+                        else
+                        {
+                            SaveOrReplaceTerrainDataAsset(tdPath, newTD, existingTD);
+                        }
+                    }
 
                     // --- Scene name/path under the SCENES subfolder, supports {t} token ---
                     string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
@@ -612,22 +761,22 @@ public sealed class TileSceneGenerator : EditorWindow
 {
     var td = new TerrainData();
 
-    // --- HEIGHTS ---
+    // HEIGHTS
     int hW = hStepX + 1;
     int hH = hStepY + 1;
-    int hResTile = Mathf.Max(hW, hH);                 // NEW: square res large enough for both
+    int hResTile = Mathf.Max(hW, hH);
     td.heightmapResolution = hResTile;
 
-    // --- ALPHAMAPS ---
+    // ALPHAMAPS
     int aW = Mathf.Max(1, aStepX);
     int aH = Mathf.Max(1, aStepY);
-    int aResTile = Mathf.Max(aW, aH);                 // NEW
+    int aResTile = Mathf.Max(aW, aH);
     td.alphamapResolution = aResTile;
 
-    // --- DETAILS ---
+    // DETAILS
     int dW = Mathf.Max(1, dStepX);
     int dH = Mathf.Max(1, dStepY);
-    int dResTile = Mathf.Max(dW, dH);                 // NEW
+    int dResTile = Mathf.Max(dW, dH); 
     td.SetDetailResolution(dResTile, _srcTD.detailResolutionPerPatch);
 
     // size/layers
@@ -635,13 +784,14 @@ public sealed class TileSceneGenerator : EditorWindow
     var tileSize = new Vector3(srcSize.x / tilesX, srcSize.y, srcSize.z / tilesY);
     td.size = tileSize;
     td.terrainLayers = layers;
+    td.detailPrototypes = _srcTD.detailPrototypes; 
 
     if (copyHeights)
     {
         int hX = tx * hStepX;
         int hY = ty * hStepY;
-        var heights = _srcTD.GetHeights(hX, hY, hW, hH);   // shape: hW × hH
-        td.SetHeights(0, 0, heights);                      // OK because hResTile >= hW,hH
+        var heights = _srcTD.GetHeights(hX, hY, hW, hH);
+        td.SetHeights(0, 0, heights);
     }
 
     if (copyAlphamaps && _srcTD.alphamapLayers > 0 && layers != null && layers.Length > 0)
@@ -653,8 +803,7 @@ public sealed class TileSceneGenerator : EditorWindow
         int h = Math.Min(aStepY, aRes - aY);
         w = Mathf.Max(1, w);
         h = Mathf.Max(1, h);
-        var splats = _srcTD.GetAlphamaps(aX, aY, w, h);    // shape: w × h × layers
-        // Ensure destination is big enough (it is: aResTile = max(aStepX,aStepY))
+        var splats = _srcTD.GetAlphamaps(aX, aY, w, h);
         td.SetAlphamaps(0, 0, splats);
     }
 
@@ -670,7 +819,6 @@ public sealed class TileSceneGenerator : EditorWindow
             w = Mathf.Max(1, w);
             h = Mathf.Max(1, h);
             var detail = _srcTD.GetDetailLayer(dX, dY, w, h, layer);
-            // Destination detail map is square with size dResTile >= w,h
             td.SetDetailLayer(0, 0, layer, detail);
         }
     }
@@ -787,6 +935,117 @@ public sealed class TileSceneGenerator : EditorWindow
         }
         catch { return false; }
     }
+    
+    private static bool AlphamapsEqual(TerrainData a, TerrainData b)
+    {
+        try
+        {
+            if (a.alphamapResolution != b.alphamapResolution) return false;
+            if (a.alphamapLayers != b.alphamapLayers) return false;
+
+            int res = a.alphamapResolution;
+            int layers = a.alphamapLayers;
+            int step = Mathf.Max(1, res / 32); // sample grid (fast enough, accurate enough)
+
+            for (int y = 0; y < res; y += step)
+            {
+                for (int x = 0; x < res; x += step)
+                {
+                    // Fetch a 1x1 sample (Unity returns [1,1,layers])
+                    var A = a.GetAlphamaps(x, y, 1, 1);
+                    var B = b.GetAlphamaps(x, y, 1, 1);
+                    for (int l = 0; l < layers; l++)
+                    {
+                        if (!Mathf.Approximately(A[0, 0, l], B[0, 0, l]))
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static bool DetailsEqual(TerrainData a, TerrainData b)
+    {
+        try
+        {
+            int layers = Mathf.Min(a.detailPrototypes.Length, b.detailPrototypes.Length);
+            if (layers == 0) return a.detailPrototypes.Length == b.detailPrototypes.Length
+                                    && a.detailWidth == b.detailWidth && a.detailHeight == b.detailHeight;
+
+            if (a.detailWidth != b.detailWidth || a.detailHeight != b.detailHeight) return false;
+
+            int aw = a.detailWidth, ah = a.detailHeight;
+            int stepX = Mathf.Max(1, aw / 32);
+            int stepY = Mathf.Max(1, ah / 32);
+
+            for (int l = 0; l < layers; l++)
+            for (int y = 0; y < ah; y += stepY)
+            for (int x = 0; x < aw; x += stepX)
+                if (a.GetDetailLayer(x, y, 1, 1, l)[0,0] != b.GetDetailLayer(x, y, 1, 1, l)[0,0])
+                    return false;
+
+            // if one has extra layers beyond 'layers', count that as change
+            return a.detailPrototypes.Length == b.detailPrototypes.Length;
+        }
+        catch { return false; }
+    }
+
+    // Compare tree instances; also compute deltas (added / removed / modified)
+    private static bool TreesEqualAndDeltas(
+        TerrainData a, TerrainData b,
+        out int added, out int removed, out bool anyModifiedPositions)
+    {
+        added = removed = 0; anyModifiedPositions = false;
+
+        try
+        {
+            var A = a.treeInstances ?? Array.Empty<TreeInstance>();
+            var B = b.treeInstances ?? Array.Empty<TreeInstance>();
+
+            // Fast path: different counts are changes
+            if (A.Length != B.Length)
+            {
+                if (B.Length > A.Length) added = B.Length - A.Length;
+                else removed = A.Length - B.Length;
+                // We still check some positions where both have entries
+                int n = Mathf.Min(A.Length, B.Length);
+                for (int i = 0; i < n; i++)
+                {
+                    if (!ApproxTree(A[i], B[i])) anyModifiedPositions = true;
+                }
+                return false;
+            }
+
+            // Same count; check pairs (order is deterministic for our tiles)
+            for (int i = 0; i < A.Length; i++)
+            {
+                if (!ApproxTree(A[i], B[i]))
+                {
+                    anyModifiedPositions = true;
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch
+        {
+            anyModifiedPositions = true; // be conservative
+            return false;
+        }
+
+        static bool ApproxTree(TreeInstance t1, TreeInstance t2)
+        {
+            if (t1.prototypeIndex != t2.prototypeIndex) return false;
+            // Loose tolerance for positions inside tile-normalized [0..1] space
+            const float tol = 1e-2f;
+            if (Mathf.Abs(t1.position.x - t2.position.x) > tol) return false;
+            if (Mathf.Abs(t1.position.z - t2.position.z) > tol) return false;
+            // Height/width/color variations are usually OK differences -> ignore
+            return true;
+        }
+    }
 
     private string ReplaceTokens(string pattern, int tx, int ty)
     {
@@ -794,6 +1053,134 @@ public sealed class TileSceneGenerator : EditorWindow
             .Replace("{x}", tx.ToString())
             .Replace("{y}", ty.ToString())
             .Replace("{t}", _currentTerrainLabel);
+    }
+    
+    private void EnsureSettingsAsset()
+    {
+        if (settings != null) return;
+
+        string folder = string.IsNullOrWhiteSpace(this.folder) ? "Assets/Scripts/Tiles" : this.folder;
+        string defaultPath = $"{folder}/TileSliceSettings.asset";
+
+        // Try to find an existing one first
+        var guids = AssetDatabase.FindAssets("t:TileSliceSettings");
+        if (guids != null && guids.Length > 0)
+        {
+            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
+            settings = AssetDatabase.LoadAssetAtPath<TileSliceSettings>(path);
+            Debug.Log($"[TileSceneGenerator] Auto-assigned existing TileSliceSettings at: {path}");
+            return;
+        }
+
+        // Make sure the folder exists
+        if (!AssetDatabase.IsValidFolder("Assets/Scripts"))
+            AssetDatabase.CreateFolder("Assets", "Scripts");
+        if (!AssetDatabase.IsValidFolder("Assets/Scripts/Tiles"))
+            AssetDatabase.CreateFolder("Assets/Scripts", "Tiles");
+
+        // Create a new asset there
+        settings = ScriptableObject.CreateInstance<TileSliceSettings>();
+        AssetDatabase.CreateAsset(settings, defaultPath);
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[TileSceneGenerator] Created new TileSliceSettings at: {defaultPath}");
+    }
+    
+    private static IEnumerable<string> SortTerrainsByCompass(TileSliceSettings settings, string masterLabel)
+    {
+        if (settings == null) yield break;
+
+        // Get the master terrain’s origin
+        if (!settings.TryGet(masterLabel, out var master))
+        {
+            foreach (var kv in settings.lastResults)
+                yield return kv.label;
+            yield break;
+        }
+
+        var masterOrigin = master.origin;
+
+        // Build list of all terrains with positions
+        var all = new List<(string label, Vector3 origin)>();
+        foreach (var kv in settings.lastResults)
+            all.Add((kv.label, kv.origin));
+
+        // Custom sort: primary north-south (Z descending), then east-west (X ascending)
+        all.Sort((a, b) =>
+        {
+            // north is positive Z
+            int zComp = -a.origin.z.CompareTo(b.origin.z); // larger Z first (north up)
+            if (zComp != 0) return zComp;
+            return a.origin.x.CompareTo(b.origin.x);       // smaller X first (west left)
+        });
+
+        // Master terrain first, then the rest in compass order
+        yield return masterLabel;
+        foreach (var kv in all)
+        {
+            if (kv.label != masterLabel)
+                yield return kv.label;
+        }
+    }
+    
+    private static string DetectMasterLabel(TileSliceSettings s)
+    {
+        if (s == null || s.lastResults == null || s.lastResults.Count == 0)
+            return null;
+
+        // centroid of all origins
+        float cx = 0f, cz = 0f;
+        foreach (var r in s.lastResults) { cx += r.origin.x; cz += r.origin.z; }
+        cx /= s.lastResults.Count; cz /= s.lastResults.Count;
+
+        // pick the label closest to centroid
+        string best = null; float bestD2 = float.PositiveInfinity;
+        foreach (var r in s.lastResults)
+        {
+            float dx = r.origin.x - cx, dz = r.origin.z - cz;
+            float d2 = dx * dx + dz * dz;
+            if (d2 < bestD2) { bestD2 = d2; best = r.label; }
+        }
+        return best;
+    }
+    
+    private static List<string> OrderLabelsClockwiseFromNorth(TileSliceSettings s, string masterLabel)
+    {
+        var ordered = new List<string>();
+        if (s == null || s.lastResults == null || s.lastResults.Count == 0) return ordered;
+
+        // Fallback to detected master if none provided
+        if (string.IsNullOrEmpty(masterLabel))
+            masterLabel = DetectMasterLabel(s);
+
+        // Get master origin (if not found, just return in arbitrary order)
+        if (!s.TryGet(masterLabel, out var master))
+        {
+            ordered.AddRange(s.lastResults.Select(r => r.label));
+            return ordered;
+        }
+
+        var others = new List<(string label, float angle)>();
+        foreach (var r in s.lastResults)
+        {
+            if (r.label == masterLabel) continue;
+
+            // relative vector from master to this tile (X right, Z north)
+            float rx = r.origin.x - master.origin.x;
+            float rz = r.origin.z - master.origin.z;
+
+            // Angle measured from +Z (north) rotating clockwise:
+            // use atan2(x, z). Range (-π..π); normalize to (0..2π)
+            float angle = Mathf.Atan2(rx, rz);       // 0 = north, π/2 = east, π = south, -π/2 = west
+            if (angle < 0f) angle += 2f * Mathf.PI;  // normalize
+            others.Add((r.label, angle));
+        }
+
+        // Sort by angle ascending: N -> NE -> E -> SE -> S -> SW -> W -> NW
+        others.Sort((a, b) => a.angle.CompareTo(b.angle));
+
+        ordered.Add(masterLabel);
+        ordered.AddRange(others.Select(o => o.label));
+        return ordered;
     }
 }
 #endif

@@ -1384,6 +1384,7 @@ MonoBehaviour:
   autoPrefix: Terrain_
   autoCollect: 1
   manualTerrains: []
+  settings: {fileID: 11400000, guid: 86df64d9dc3f6e74db4dc56bcdb4325e, type: 2}
   tileSizeMeters: 250
   worldOffset: {x: 0, y: 0, z: 0}
   lineColor: {r: 0, g: 1, b: 1, a: 0.85}

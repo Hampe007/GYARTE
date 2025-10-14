@@ -5,11 +5,6 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Tile Slice Settings", fileName = "TileSliceSettings")]
 public sealed class TileSliceSettings : ScriptableObject
 {
-    [Header("Desired Inputs")]
-    public float tileSizeMeters = 250f;
-    public bool evenFitNoRemainder = true;
-    public bool forceSquareTiles   = true;
-
     [Serializable]
     public sealed class PerTerrain
     {

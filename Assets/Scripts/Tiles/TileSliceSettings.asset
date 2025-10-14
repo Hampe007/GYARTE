@@ -1,0 +1,78 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7f08869351f2d140afbf0d8c40ec331, type: 3}
+  m_Name: TileSliceSettings
+  m_EditorClassIdentifier: 
+  lastResults:
+  - label: Terrain_Master
+    origin: {x: 0, y: -2, z: 0}
+    size: {x: 5000, y: 1000, z: 5000}
+    tilesX: 20
+    tilesY: 20
+    tileSizeX: 250
+    tileSizeY: 250
+  - label: Terrain_North
+    origin: {x: 0, y: -2, z: 5000}
+    size: {x: 5000, y: 1000, z: 256}
+    tilesX: 20
+    tilesY: 1
+    tileSizeX: 250
+    tileSizeY: 256
+  - label: Terrain_East
+    origin: {x: 5000, y: -2, z: 0}
+    size: {x: 256, y: 1000, z: 5000}
+    tilesX: 1
+    tilesY: 20
+    tileSizeX: 256
+    tileSizeY: 250
+  - label: Terrain_South
+    origin: {x: 0, y: -2, z: -255.99997}
+    size: {x: 5000, y: 1000, z: 256}
+    tilesX: 20
+    tilesY: 1
+    tileSizeX: 250
+    tileSizeY: 256
+  - label: Terrain_West
+    origin: {x: -256, y: -2, z: 0}
+    size: {x: 256, y: 1000, z: 5000}
+    tilesX: 1
+    tilesY: 20
+    tileSizeX: 256
+    tileSizeY: 250
+  - label: Terrain_NorthEast
+    origin: {x: 5000, y: -2, z: 5000}
+    size: {x: 256, y: 1000, z: 256}
+    tilesX: 1
+    tilesY: 1
+    tileSizeX: 256
+    tileSizeY: 256
+  - label: Terrain_NorthWest
+    origin: {x: -256, y: -2, z: 5000}
+    size: {x: 256, y: 1000, z: 256}
+    tilesX: 1
+    tilesY: 1
+    tileSizeX: 256
+    tileSizeY: 256
+  - label: Terrain_SouthEast
+    origin: {x: 5000, y: -2, z: -255.99997}
+    size: {x: 256, y: 1000, z: 256}
+    tilesX: 1
+    tilesY: 1
+    tileSizeX: 256
+    tileSizeY: 256
+  - label: Terrain_SouthWest
+    origin: {x: -256, y: -2, z: -255.99997}
+    size: {x: 256, y: 1000, z: 256}
+    tilesX: 1
+    tilesY: 1
+    tileSizeX: 256
+    tileSizeY: 256
