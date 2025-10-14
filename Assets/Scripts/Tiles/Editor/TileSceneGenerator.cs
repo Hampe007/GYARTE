@@ -9,16 +9,21 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Debug = UnityEngine.Debug;
 
 public sealed class TileSceneGenerator : EditorWindow
 {
     // ===== UI / runtime guard =====
     private bool _isRunning = false;
+    private Stopwatch _globalTimer;
 
+    [SerializeField] private TileSliceSettings settings;
+    
     // ===== Source (multi-terrain) =====
     [Header("Source Terrains")]
     [SerializeField] private bool autoCollectTerrains = true;
@@ -34,6 +39,9 @@ public sealed class TileSceneGenerator : EditorWindow
     [SerializeField] private float tileSizeMeters = 250f;
     [HideInInspector] private int tilesX;
     [HideInInspector] private int tilesY;
+    
+    [SerializeField] private bool evenFitNoRemainder = true; // adjust size so terrain divides evenly
+    [SerializeField] private bool forceSquareTiles   = true; // when even-fit, make tiles perfect squares
 
     // ===== Output =====
     [Header("Output")]
@@ -103,9 +111,87 @@ public sealed class TileSceneGenerator : EditorWindow
             }
         }
 
-        EditorGUILayout.Space(6);
-        tileSizeMeters = EditorGUILayout.FloatField("Tile Size (meters)", tileSizeMeters);
+        settings = (TileSliceSettings)EditorGUILayout.ObjectField(
+            new GUIContent("Shared Settings",
+                "ScriptableObject that stores slicer inputs and last exact results per terrain. " +
+                "The gizmo reads from this to draw exactly what was sliced."),
+            settings, typeof(TileSliceSettings), false);
 
+        if (settings == null && GUILayout.Button("Create TileSliceSettings asset here"))
+        {
+            var path = "Assets/TileSliceSettings.asset";
+            settings = ScriptableObject.CreateInstance<TileSliceSettings>();
+            AssetDatabase.CreateAsset(settings, path);
+            AssetDatabase.SaveAssets();
+            EditorGUIUtility.PingObject(settings);
+        }
+        
+        EditorGUILayout.LabelField("Grid Behaviour", EditorStyles.boldLabel);
+        
+        EditorGUILayout.Space(6);
+        tileSizeMeters = EditorGUILayout.FloatField(
+            new GUIContent(
+                "Tile Size (meters)",
+                "Desired approximate tile size in world meters. " +
+                "If 'Even Fit' is OFF, this exact size is used, and the edges may end up with smaller leftover tiles. " +
+                "If 'Even Fit' is ON, the tool slightly adjusts this size so the terrain divides evenly."
+            ),
+            tileSizeMeters
+        );
+
+        float uiTileMeters = settings ? settings.tileSizeMeters : tileSizeMeters;
+        uiTileMeters = EditorGUILayout.FloatField(
+            new GUIContent("Tile Size (meters)",
+                "Desired approximate tile size. With Even Fit OFF this exact size is used; " +
+                "with Even Fit ON it's adjusted to divide the terrain evenly."),
+            uiTileMeters);
+
+        bool uiEvenFit = settings ? settings.evenFitNoRemainder : evenFitNoRemainder;
+        uiEvenFit = EditorGUILayout.ToggleLeft(
+            new GUIContent("Even Fit (no remainder tiles)",
+                "Adjust tile size slightly so width/height divide evenly into whole tiles. " +
+                "Prevents thin edge strips."),
+            uiEvenFit);
+
+        using (new EditorGUI.IndentLevelScope())
+        {
+            bool uiSquare = settings ? settings.forceSquareTiles : forceSquareTiles;
+            uiSquare = EditorGUILayout.ToggleLeft(
+                new GUIContent("Force Square Tiles",
+                    "When Even Fit is on, makes each tile square (same X/Z size)."),
+                uiSquare);
+
+            if (settings) settings.forceSquareTiles = uiSquare; else forceSquareTiles = uiSquare;
+        }
+
+        if (settings)
+        {
+            settings.tileSizeMeters     = uiTileMeters;
+            settings.evenFitNoRemainder = uiEvenFit;
+        }
+        else
+        {
+            tileSizeMeters     = uiTileMeters;
+            evenFitNoRemainder = uiEvenFit;
+        }
+        
+        copyHeights = EditorGUILayout.Toggle(
+            new GUIContent("Copy Heights", "Copies terrain height data into each tile."),
+            copyHeights
+        );
+        copyAlphamaps = EditorGUILayout.Toggle(
+            new GUIContent("Copy Alphamaps (Textures)", "Copies texture splatmap data (terrain painting) into tiles. Slower, larger output."),
+            copyAlphamaps
+        );
+        copyDetails = EditorGUILayout.Toggle(
+            new GUIContent("Copy Details (Grass)", "Copies terrain detail layers (grass). Requires matching prototypes."),
+            copyDetails
+        );
+        copyTrees = EditorGUILayout.Toggle(
+            new GUIContent("Copy Trees", "Copies tree instances into the tiles."),
+            copyTrees
+        );
+        
         // Preview (best-effort, does not touch live Terrains when running)
         if (!_isRunning)
         {
@@ -119,21 +205,74 @@ public sealed class TileSceneGenerator : EditorWindow
             }
         }
 
-        sceneNamePattern = EditorGUILayout.TextField("Scene Name Pattern", sceneNamePattern);
-        outputFolder = EditorGUILayout.TextField("Output Root Folder", outputFolder);
-        terrainDataPrefix = EditorGUILayout.TextField("TerrainData Prefix", terrainDataPrefix);
-        subfolderPerTerrain = EditorGUILayout.Toggle("Subfolder Per Terrain", subfolderPerTerrain);
+        // --- Output settings ---
+        sceneNamePattern = EditorGUILayout.TextField(
+            new GUIContent(
+                "Scene Name Pattern",
+                "Pattern for naming generated tile scenes. Use tokens:\n" +
+                "  {t} = Terrain name\n  {x} = Tile column index\n  {y} = Tile row index\n\n" +
+                "Example: {t}_Tile_{x}_{y} → TerrainMain_Tile_2_3.unity"
+            ),
+            sceneNamePattern
+        );
+
+        outputFolder = EditorGUILayout.TextField(
+            new GUIContent(
+                "Output Root Folder",
+                "Base folder (under Assets/) where tile scenes and terrain data will be generated. " +
+                "Each terrain gets its own subfolder if 'Subfolder Per Terrain' is enabled."
+            ),
+            outputFolder
+        );
+
+        terrainDataPrefix = EditorGUILayout.TextField(
+            new GUIContent(
+                "TerrainData Prefix",
+                "Prefix for saved TerrainData assets inside the 'TerrainData' subfolder. " +
+                "Final names look like: TD_<terrain>_<x>_<y>.asset"
+            ),
+            terrainDataPrefix
+        );
+
+        subfolderPerTerrain = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Subfolder Per Terrain",
+                "If enabled, each terrain’s tiles are saved inside its own subfolder under the root output folder. " +
+                "Keeps multi-terrain projects neatly organized."
+            ),
+            subfolderPerTerrain
+        );
 
         EditorGUILayout.Space(6);
-        copyHeights    = EditorGUILayout.Toggle("Copy Heights", copyHeights);
-        copyAlphamaps  = EditorGUILayout.Toggle("Copy Alphamaps (Textures)", copyAlphamaps);
-        copyDetails    = EditorGUILayout.Toggle("Copy Details (Grass)", copyDetails);
-        copyTrees      = EditorGUILayout.Toggle("Copy Trees", copyTrees);
 
-        EditorGUILayout.Space(6);
-        nonDestructiveReslice = EditorGUILayout.Toggle("Non-Destructive Re-slice (preserve props)", nonDestructiveReslice);
-        onlyUpdateIfChanged   = EditorGUILayout.Toggle(new GUIContent("Only Update If Changed (height check)", "Skips writing a tile if heights are identical to current data."), onlyUpdateIfChanged);
-        addToBuildSettings    = EditorGUILayout.Toggle("Ensure In Build Settings", addToBuildSettings);
+        // --- Re-slice behaviour ---
+        nonDestructiveReslice = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Non-Destructive Re-slice",
+                "When enabled, the tool updates only the TerrainData inside existing tile scenes, " +
+                "leaving all your manually placed props, lighting, and scene setup untouched."
+            ),
+            nonDestructiveReslice
+        );
+
+        onlyUpdateIfChanged = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Only Update If Changed (heights)",
+                "When enabled, tiles are skipped if their heightmaps are identical to the source terrain. " +
+                "Speeds up re-slicing when only a few tiles have changed."
+            ),
+            onlyUpdateIfChanged
+        );
+
+        addToBuildSettings = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Ensure In Build Settings",
+                "Automatically adds all generated tile scenes to the Unity Build Settings. " +
+                "Recommended if you plan to load them via additive scene streaming at runtime."
+            ),
+            addToBuildSettings
+        );
+
 
         EditorGUILayout.Space(10);
         using (new EditorGUI.DisabledScope(!CanRun()))
@@ -177,6 +316,7 @@ public sealed class TileSceneGenerator : EditorWindow
     private void RunForAllTerrains()
     {
         _isRunning = true;
+        _globalTimer = Stopwatch.StartNew(); // start total timer
         try
         {
             var snapshots = CollectSnapshots();
@@ -187,28 +327,36 @@ public sealed class TileSceneGenerator : EditorWindow
 
             string originalOutputRoot = outputFolder;
 
+            // 🕒 loop through each terrain and time individually
             foreach (var snap in snapshots)
             {
-                _currentTerrainLabel = snap.label;
-                _srcTD               = snap.data;     // cached TerrainData asset
-                Vector3 cachedOrigin = snap.origin;   // cached world position
+                var terrainTimer = Stopwatch.StartNew();
 
-                // Per-terrain root: Assets/Scenes/Tiles/<TerrainName>
+                _currentTerrainLabel = snap.label;
+                _srcTD               = snap.data;
+                Vector3 cachedOrigin = snap.origin;
+
                 outputFolder = subfolderPerTerrain ? $"{originalOutputRoot}/{_currentTerrainLabel}" : originalOutputRoot;
 
-                ComputeGridFromMeters();   // uses _srcTD only
-                ValidateInputs();          // sets _outputScenesFolder/_outputDataFolder
+                ComputeGridFromMeters();
+                ValidateInputs();
                 RunSliceOrReslice(cachedOrigin);
+
+                terrainTimer.Stop(); // stop individual timer
+                Debug.Log($"[TileSceneGenerator] Finished {_currentTerrainLabel} in {terrainTimer.Elapsed.TotalSeconds:F1} seconds.");
 
                 outputFolder = originalOutputRoot;
             }
         }
         finally
         {
-            _isRunning = false;
+            _globalTimer.Stop(); // stop total timer
             EditorUtility.ClearProgressBar();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
+            Debug.Log($"[TileSceneGenerator] ✅ All terrains processed in {_globalTimer.Elapsed.TotalSeconds:F1} seconds total.");
+            _isRunning = false;
         }
     }
 
@@ -255,6 +403,7 @@ public sealed class TileSceneGenerator : EditorWindow
     }
 
     // --- Compute tilesX/tilesY from meters for the CURRENT snapshot ---
+    // --- Compute tilesX/tilesY from meters for the CURRENT snapshot ---
     private void ComputeGridFromMeters()
     {
         if (_srcTD == null)
@@ -263,10 +412,52 @@ public sealed class TileSceneGenerator : EditorWindow
         if (tileSizeMeters <= 0f)
             throw new ArgumentOutOfRangeException(nameof(tileSizeMeters), "Tile Size (meters) must be > 0.");
 
-        var sz = _srcTD.size;
-        tilesX = Mathf.Max(1, Mathf.CeilToInt(sz.x / tileSizeMeters));
-        tilesY = Mathf.Max(1, Mathf.CeilToInt(sz.z / tileSizeMeters));
-        Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: grid {tilesX}×{tilesY} at ≈{tileSizeMeters:0} m.");
+        var sz = _srcTD.size; // world meters
+
+        if (!evenFitNoRemainder)
+        {
+            // MODE A: Exact meters (may produce smaller edge strips)
+            tilesX = Mathf.Max(1, Mathf.CeilToInt(sz.x / tileSizeMeters));
+            tilesY = Mathf.Max(1, Mathf.CeilToInt(sz.z / tileSizeMeters));
+            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EXACT METERS mode → {tilesX}×{tilesY} tiles at {tileSizeMeters:0.##} m (edges may be smaller).");
+            return;
+        }
+
+        // MODE B: Even fit (adjust tile size so terrain divides perfectly)
+        // First pick a count close to the desired size
+        int nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / tileSizeMeters));
+        int ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / tileSizeMeters));
+
+        // Base even-fit sizes per axis
+        float fitX = sz.x / nx;
+        float fitY = sz.z / ny;
+
+        if (forceSquareTiles)
+        {
+            // Use one square size s, recompute counts so both axes are multiples of s
+            float s = Mathf.Min(fitX, fitY);                 // stay near desired size
+            nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / s));
+            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
+            // snap s to the final exact division
+            s  = sz.x / nx;
+            // Make sure Y also lines up with the same s
+            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
+            // finalize counts
+            tilesX = nx;
+            tilesY = ny;
+
+            tileSizeMeters = s; // keep UI preview honest
+            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EVEN FIT + SQUARE → {tilesX}×{tilesY} tiles at {tileSizeMeters:0.##} m (perfect grid).");
+        }
+        else
+        {
+            // Even fit, but allow rectangular tiles (still no edge remainders)
+            tilesX = nx;
+            tilesY = ny;
+            // Update UI tile size readout to the exact even-fit per axis (use X as representative)
+            tileSizeMeters = fitX;
+            Debug.Log($"[TileSceneGenerator] {_currentTerrainLabel}: EVEN FIT (rect allowed) → {tilesX}×{tilesY} tiles at ~{fitX:0.##}×{fitY:0.##} m.");
+        }
     }
 
     private void ValidateInputs()
