@@ -43,7 +43,6 @@ public sealed class GamePlayerController : NetworkBehaviour
     [SerializeField] private int historySize = 32;
 
     private CharacterController _cc;
-    private ThirdPersonCameraController _tpcam;
 
     // Authoritative state (server truth)
     struct ServerState { public Vector3 pos; public Vector3 vel; public float yaw; public uint ackSeq; }
@@ -77,7 +76,6 @@ public sealed class GamePlayerController : NetworkBehaviour
     private void Awake()
     {
         _cc = GetComponent<CharacterController>();
-        _tpcam = GetComponent<ThirdPersonCameraController>();
     }
 
     public override void OnStartAuthority()
@@ -160,11 +158,6 @@ public sealed class GamePlayerController : NetworkBehaviour
             bool crouchToggle = _crouchA != null && _crouchA.WasPressedThisFrame();
             if (crouchToggle) _isCrouching = !_isCrouching;
 
-            // Update local camera first
-            if (_tpcam != null) _tpcam.InjectLook(look);
-
-            float camYaw = _tpcam != null ? _tpcam.Yaw : transform.eulerAngles.y;
-
             // Build packet & push to pending
             var pkt = new InputPacket
             {
@@ -174,7 +167,6 @@ public sealed class GamePlayerController : NetworkBehaviour
                 jump = jump,
                 sprint = sprint,
                 crouch = _isCrouching,
-                yaw = camYaw,
                 look = look
             };
             _pending.Enqueue(pkt);
