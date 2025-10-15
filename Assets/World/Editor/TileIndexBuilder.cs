@@ -9,7 +9,7 @@ using UnityEngine;
 public static class TileIndexBuilder
 {
     private const string AssetPath = "Assets/World/Resources/TileIndex.asset";
-    private static readonly Regex NamePattern = new(@"^Tile_(?<x>-?\\d+)_(?<y>-?\\d+)$", RegexOptions.Compiled);
+    private static readonly Regex NamePattern = new(@"(?:^|)Tile(?<x>-?\d+)_(?<y>-?\d+)$", RegexOptions.Compiled);
 
     [MenuItem("Tiles/Rebuild TileIndex from Selection")]
     public static void RebuildFromSelection()
