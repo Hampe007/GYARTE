@@ -5,38 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="27d5728e-e1d4-4141-a501-683bb14e2ba0" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/50-Mirror__Network Manager-NewNetworkManager.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/50-Mirror__Network Manager-NewNetworkManager.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/51-Mirror__Network Manager With Actions-NewNetworkManagerWithActions.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/51-Mirror__Network Manager With Actions-NewNetworkManagerWithActions.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/52-Mirror__Network Authenticator-NewNetworkAuthenticator.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/52-Mirror__Network Authenticator-NewNetworkAuthenticator.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/52-Mirror__Network Behaviour-NewNetworkBehaviour.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/52-Mirror__Network Behaviour-NewNetworkBehaviour.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/53-Mirror__Network Behaviour With Actions-NewNetworkBehaviourWithActions.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/53-Mirror__Network Behaviour With Actions-NewNetworkBehaviourWithActions.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/54-Mirror__Custom Interest Management-CustomInterestManagement.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/54-Mirror__Custom Interest Management-CustomInterestManagement.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/54-Mirror__Network Room Manager-NewNetworkRoomManager.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/54-Mirror__Network Room Manager-NewNetworkRoomManager.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/55-Mirror__Network Room Player-NewNetworkRoomPlayer.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/55-Mirror__Network Room Player-NewNetworkRoomPlayer.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/56-Mirror__Network Discovery-NewNetworkDiscovery.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/56-Mirror__Network Discovery-NewNetworkDiscovery.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/57-Mirror__Network Transform-NewNetworkTransform.cs.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/57-Mirror__Network Transform-NewNetworkTransform.cs.txt.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/Editor.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/Editor/MoveToAssetsFolder.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/ScriptTemplates/Editor/MoveToAssetsFolder.cs.meta" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Materials/Crate - URP.mat" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Materials/Crate - URP.mat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Materials/Ground - URP.mat" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Materials/Ground - URP.mat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Resources/Fonts &amp; Materials/Bangers SDF Logo - URP.mat" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Resources/Fonts &amp; Materials/Bangers SDF Logo - URP.mat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Resources/Fonts &amp; Materials/Roboto-Bold SDF - URP.mat" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/TextMesh Pro/Examples &amp; Extras/Resources/Fonts &amp; Materials/Roboto-Bold SDF - URP.mat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Editor/TileIndexBuilder.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Editor/TileIndexBuilder.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.probuilder/Settings.json" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.probuilder/Settings.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.sequences/Settings.json" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.sequences/Settings.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.testtools.codecoverage/Settings.json" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.testtools.codecoverage/Settings.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ProjectSettings/ShaderGraphSettings.asset" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/ShaderGraphSettings.asset" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -80,22 +53,22 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "additive-scenes",
-    "ignore.virus.scanning.warn.message": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;additive-scenes&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RiderProblemsViewState">
     <hideBySeverity>
       <option value="15" />
@@ -171,6 +144,7 @@
       <workItem from="1760006900242" duration="7764000" />
       <workItem from="1760446187867" duration="3915000" />
       <workItem from="1760461553182" duration="13654000" />
+      <workItem from="1760549328528" duration="331000" />
     </task>
     <servers />
   </component>
