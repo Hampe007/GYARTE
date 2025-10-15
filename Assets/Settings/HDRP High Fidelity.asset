@@ -31,9 +31,9 @@ MonoBehaviour:
     supportVolumetricClouds: 0
     supportLightLayers: 1
     renderingLayerMaskBuffer: 0
-    supportWater: 0
+    supportWater: 1
     waterSimulationResolution: 128
-    supportWaterExclusion: 0
+    supportWaterExclusion: 1
     supportWaterDecals: 1
     waterDecalAtlasSize: 1024
     maximumWaterDecalCount: 48
@@ -61,7 +61,7 @@ MonoBehaviour:
       m_SchemaId:
         m_Id: With3Levels
     supportDecals: 1
-    supportDecalLayers: 0
+    supportDecalLayers: 1
     supportSurfaceGradient: 0
     decalNormalBufferHP: 0
     supportHighQualityLineRendering: 0
@@ -338,7 +338,7 @@ MonoBehaviour:
   availableMaterialQualityLevels: -1
   m_DefaultMaterialQualityLevel: 4
   diffusionProfileSettings: {fileID: 0}
-  m_VolumeProfile: {fileID: 0}
+  m_VolumeProfile: {fileID: 11400000, guid: d1d7cb46a0fe2f440b7001ccdc6c5c1e, type: 2}
   virtualTexturingSettings:
     streamingCpuCacheSizeInMegaBytes: 256
     streamingMipPreloadTexturesPerFrame: 0

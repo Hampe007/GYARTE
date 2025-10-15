@@ -4,8 +4,8 @@
 # Rider ignored files
 /modules.xml
 /.idea.GYARTE.iml
-/contentModel.xml
 /projectSettingsUpdater.xml
+/contentModel.xml
 # Editor-based HTTP Client requests
 /httpRequests/
 # Datasource local storage ignored files
