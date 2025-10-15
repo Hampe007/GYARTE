@@ -311,14 +311,23 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void OnDrawGizmos()
     {
+        // Guard against missing index or uninitialized dictionaries
         if (index == null)
-        {
             return;
-        }
+
+        // Ensure lookups exist (OnEnable might not have run yet in edit mode)
+        var _ = index.Tiles; // forces ScriptableObject deserialization
+        var tileField = typeof(TileIndex).GetField("coordLookup", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (tileField?.GetValue(index) == null)
+            return;
+
+        // Skip when Mirror isn't active
+        if (!Application.isPlaying)
+            return;
 
         Vector3? focusPosition = null;
 
-        if (isServer && NetworkServer.active)
+        if (isServer && NetworkServer.active && NetworkServer.connections != null)
         {
             foreach (var conn in NetworkServer.connections.Values)
             {
@@ -335,23 +344,30 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         if (!focusPosition.HasValue)
-        {
             return;
-        }
 
         var centerCoord = index.WorldToTile(focusPosition.Value);
-        if (!index.TryGetByCoord(centerCoord, out var record))
+
+        Bounds worldBounds;
+        if (index.TryGetByCoord(centerCoord, out var found))
         {
-            record.worldBounds = new Bounds(new Vector3(
-                centerCoord.x * index.TileSizeMeters.x + index.TileSizeMeters.x * 0.5f,
-                focusPosition.Value.y,
-                centerCoord.y * index.TileSizeMeters.y + index.TileSizeMeters.y * 0.5f),
-                new Vector3(index.TileSizeMeters.x, 0f, index.TileSizeMeters.y));
+            worldBounds = found.worldBounds;
+        }
+        else
+        {
+            var size = index.TileSizeMeters;
+            var halfX = size.x * 0.5f;
+            var halfY = size.y * 0.5f;
+            worldBounds = new Bounds(
+                new Vector3(centerCoord.x * size.x + halfX, focusPosition.Value.y, centerCoord.y * size.y + halfY),
+                new Vector3(size.x, 0f, size.y));
         }
 
-        Vector3 tileCenter = record.worldBounds.center;
-        Vector3 sizeInner = new(index.TileSizeMeters.x * (innerRadius * 2 + 1), 0f, index.TileSizeMeters.y * (innerRadius * 2 + 1));
-        Vector3 sizeOuter = new(index.TileSizeMeters.x * (outerRadius * 2 + 1), 0f, index.TileSizeMeters.y * (outerRadius * 2 + 1));
+        var tileCenter = worldBounds.center;
+        var sizeInner = new Vector3(index.TileSizeMeters.x * (innerRadius * 2 + 1), 0f,
+                                    index.TileSizeMeters.y * (innerRadius * 2 + 1));
+        var sizeOuter = new Vector3(index.TileSizeMeters.x * (outerRadius * 2 + 1), 0f,
+                                    index.TileSizeMeters.y * (outerRadius * 2 + 1));
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireCube(tileCenter, sizeInner);

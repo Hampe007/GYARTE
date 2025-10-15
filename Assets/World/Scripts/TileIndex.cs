@@ -5,7 +5,7 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Tiles/Tile Index", fileName = "TileIndex")]
 public class TileIndex : ScriptableObject
 {
-    [Serializable]
+    [Serializable] 
     public struct TileRecord
     {
         public Vector2Int coord;
@@ -13,11 +13,9 @@ public class TileIndex : ScriptableObject
         public Bounds worldBounds;
     }
 
-    [SerializeField]
-    private Vector2 tileSizeMeters = new(250f, 250f);
+    [SerializeField] private Vector2 tileSizeMeters = new(250f, 250f);
 
-    [SerializeField]
-    private List<TileRecord> tiles = new();
+    [SerializeField] private List<TileRecord> tiles = new();
 
     private readonly Dictionary<Vector2Int, TileRecord> coordLookup = new();
     private readonly Dictionary<string, TileRecord> pathLookup = new();

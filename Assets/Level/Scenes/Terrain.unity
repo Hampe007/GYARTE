@@ -1420,7 +1420,7 @@ GameObject:
   - component: {fileID: 1868536484}
   - component: {fileID: 1868536486}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: TileCoordinator
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1898,9 +1898,9 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 698706188}
+  - {fileID: 1931227883}
   - {fileID: 1868536485}
   - {fileID: 1776597281}
   - {fileID: 945646049}
   - {fileID: 2050203919}
   - {fileID: 450241994}
-  - {fileID: 1931227883}
