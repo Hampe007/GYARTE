@@ -5,10 +5,18 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 1
+  - enabled: 0
     path: Assets/OutdoorsScene.unity
     guid: 8124e5870f4fd4c779e7a5f994e84ad1
   - enabled: 1
+    path: Assets/Level/Scenes/MainMenu.unity
+    guid: f708c4dddfd89374f94639d093abe96d
+  - enabled: 1
+    path: Assets/Level/Scenes/Lobby.unity
+    guid: a8bdc896ff9fef44a8567eb7ca09b381
+  - enabled: 1
+    path: Assets/Level/Scenes/Game.unity
+    guid: 3f81376226e01d64ba318e82457c14e3
     path: Assets/Scenes/Tiles/Tile_0_0.unity
     guid: 9feee3674f303da4f8fc62e9801bbf5a
   - enabled: 1

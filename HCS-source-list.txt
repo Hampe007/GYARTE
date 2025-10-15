@@ -1,0 +1,16 @@
+Steam:
+https://partner.steamgames.com/doc/features/multiplayer?language=english
+https://partner.steamgames.com/doc/features/multiplayer/networking?language=english
+https://partner.steamgames.com/doc/features/multiplayer/steamdatagramrelay?language=english
+https://partner.steamgames.com/doc/features/multiplayer/matchmaking?language=english
+
+Fizzy Steamworks:
+https://github.com/Chykary/FizzySteamworks
+
+Mirror:
+https://mirror-networking.gitbook.io/docs/manual/general
+https://mirror-networking.gitbook.io/docs/manual/transports
+https://mirror-networking.gitbook.io/docs/manual/general/tcp-and-udp
+https://mirror-networking.gitbook.io/docs/manual/components
+https://mirror-networking.gitbook.io/docs/manual/general/syncdirection
+https://mirror-networking.gitbook.io/docs/manual/general/netgraph
