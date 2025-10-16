@@ -6,10 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="27d5728e-e1d4-4141-a501-683bb14e2ba0" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/InputSystem/InputSystem_Actions.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/InputSystem/InputSystem_Actions.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileIndex.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Scripts/TileIndex.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.sequences/Settings.json" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/Packages/com.unity.sequences/Settings.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -44,6 +41,9 @@
     &quot;accountId&quot;: &quot;617f3a2c-df36-4e53-a5b1-a71152172220&quot;
   }
 }</component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 5
@@ -146,6 +146,8 @@
       <workItem from="1760461553182" duration="13654000" />
       <workItem from="1760549328528" duration="331000" />
       <workItem from="1760558703160" duration="729000" />
+      <workItem from="1760602977386" duration="1817000" />
+      <workItem from="1760607758596" duration="4892000" />
     </task>
     <servers />
   </component>
