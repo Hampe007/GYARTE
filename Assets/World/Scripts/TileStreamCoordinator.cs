@@ -20,6 +20,10 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private Coroutine serverLoop;
     private Coroutine clientApplyCoroutine;
+    
+    public bool offlineStandalone = true;
+    public Transform offlineTarget;
+    private Coroutine offlineLoop;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -373,5 +377,71 @@ public class TileStreamCoordinator : NetworkBehaviour
         Gizmos.DrawWireCube(tileCenter, sizeInner);
         Gizmos.color = Color.cyan;
         Gizmos.DrawWireCube(tileCenter, sizeOuter);
+    }
+    
+    private void OnEnable()
+    {
+        // Offline mode: run when Mirror is not active
+        if (offlineStandalone && !NetworkServer.active && !NetworkClient.active && index != null)
+        {
+            if (offlineLoop == null) offlineLoop = StartCoroutine(OfflineLoop());
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (offlineLoop != null)
+        {
+            StopCoroutine(offlineLoop);
+            offlineLoop = null;
+        }
+    }
+
+    // Add the offline loop (local client-side streaming)
+    private IEnumerator OfflineLoop()
+    {
+        var wait = new WaitForSeconds(scanInterval);
+
+        Vector2Int lastCenter = new Vector2Int(int.MinValue, int.MinValue);
+        var desired = new HashSet<string>();
+
+        while (isActiveAndEnabled && !NetworkServer.active && !NetworkClient.active)
+        {
+            Transform t = offlineTarget != null ? offlineTarget : (Camera.main != null ? Camera.main.transform : null);
+            if (t == null || index == null)
+            {
+                yield return wait;
+                continue;
+            }
+
+            var center = index.WorldToTile(t.position);
+
+            if (center != lastCenter)
+            {
+                desired.Clear();
+                foreach (var path in index.CoordsToSceneSet(center, Mathf.Max(0, innerRadius)))
+                    desired.Add(path);
+
+                var toLoad = desired.Except(clientLoaded).ToList();
+                var toUnload = clientLoaded.Except(desired).ToList();
+
+                foreach (var path in toLoad)
+                    yield return LoadTileClient(path);
+
+                foreach (var path in toUnload)
+                    yield return UnloadTileClient(path);
+
+                clientLoaded.Clear();
+                foreach (var path in desired)
+                {
+                    if (UnityEngine.SceneManagement.SceneManager.GetSceneByPath(path).isLoaded)
+                        clientLoaded.Add(path);
+                }
+
+                lastCenter = center;
+            }
+
+            yield return wait;
+        }
     }
 }
