@@ -52,6 +52,14 @@ public class PerformanceLogger : MonoBehaviour
         [InspectorName("240")] _240 = 240,
         [InspectorName("Unlimited")] Unlimited = -1
     }
+    
+    float _sumFps, _sumCpuMs, _sumGpuMs, _sumRam;
+    int _sampleCount, _gpuCount;
+    
+    float _minFps = float.MaxValue, _maxFps = float.MinValue;
+    float _minCpu = float.MaxValue, _maxCpu = float.MinValue;
+    float _minGpu = float.MaxValue, _maxGpu = float.MinValue;
+    float _minRam = float.MaxValue, _maxRam = float.MinValue;
 
 #if UNITY_EDITOR
     void OnValidate()
@@ -168,18 +176,41 @@ public class PerformanceLogger : MonoBehaviour
         float fps = dt > 0f ? 1f / dt : 0f;
         float cpuMs = dt * 1000f;
 
-        // GPU frame time (best-effort)
+        // GPU frame time
         FrameTimingManager.CaptureFrameTimings();
         double gpuMs = double.NaN;
         FrameTiming[] frames = new FrameTiming[1];
         if (FrameTimingManager.GetLatestTimings(1, frames) > 0)
             gpuMs = frames[0].gpuFrameTime;
 
-        // RAM in MB (Unity-tracked)
+        // RAM in MB
         double ramMB = Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0);
 
+        // Accumulate for averages
+        _sumFps += fps;
+        _sumCpuMs += cpuMs;
+        if (!double.IsNaN(gpuMs))
+        {
+            _sumGpuMs += (float)gpuMs;
+            _gpuCount++;
+        }
+        _sumRam += (float)ramMB;
+        _sampleCount++;
+
+        // Track min/max
+        _minFps = Mathf.Min(_minFps, fps);
+        _maxFps = Mathf.Max(_maxFps, fps);
+        _minCpu = Mathf.Min(_minCpu, cpuMs);
+        _maxCpu = Mathf.Max(_maxCpu, cpuMs);
+        if (!double.IsNaN(gpuMs))
+        {
+            _minGpu = Mathf.Min(_minGpu, (float)gpuMs);
+            _maxGpu = Mathf.Max(_maxGpu, (float)gpuMs);
+        }
+        _minRam = Mathf.Min(_minRam, (float)ramMB);
+        _maxRam = Mathf.Max(_maxRam, (float)ramMB);
+
         // Compose CSV row
-        // "Fn" is how mau decimals to write
         var inv = CultureInfo.InvariantCulture;
         string row = string.Join(",",
             Time.time.ToString("F1", inv),
@@ -192,7 +223,7 @@ public class PerformanceLogger : MonoBehaviour
         if (mode == LoggingMode.Continuous)
         {
             _writer.WriteLine(row);
-            try { _stream.Flush(); } catch { /* ignore transient I/O errors */ }
+            try { _stream.Flush(); } catch {}
         }
         else
         {
@@ -207,25 +238,75 @@ public class PerformanceLogger : MonoBehaviour
     }
 
     void OnDestroy()
+{
+    try
     {
-        try
+        if (mode == LoggingMode.EndOnly && _buffer != null)
         {
-            if (mode == LoggingMode.EndOnly && _buffer != null)
-            {
-                foreach (var r in _rows) _buffer.AppendLine(r);
-                File.WriteAllText(_path, _buffer.ToString(), new UTF8Encoding(false));
-            }
-
-            _writer?.Flush();
-            _stream?.Flush();
+            foreach (var r in _rows) _buffer.AppendLine(r);
+            File.WriteAllText(_path, _buffer.ToString(), new UTF8Encoding(false));
         }
-        catch { }
-        finally
+
+        _writer?.Flush();
+        _stream?.Flush();
+
+        if (_sampleCount > 0)
         {
-            try { _writer?.Dispose(); } catch {}
-            try { _stream?.Dispose(); } catch {}
+            var inv = CultureInfo.InvariantCulture;
+
+            float avgFps = _sumFps / _sampleCount;
+            float avgCpu = _sumCpuMs / _sampleCount;
+            string avgGpuStr = _gpuCount > 0 ? (_sumGpuMs / _gpuCount).ToString("F1", inv) : "";
+            float avgRam = _sumRam / _sampleCount;
+
+            string avgLine = string.Join(",",
+                "AVERAGE",
+                avgFps.ToString("F1", inv),
+                avgCpu.ToString("F1", inv),
+                avgGpuStr,
+                avgRam.ToString("F1", inv)
+            );
+
+            string minLine = string.Join(",",
+                "MIN",
+                _minFps.ToString("F1", inv),
+                _minCpu.ToString("F1", inv),
+                _gpuCount > 0 ? _minGpu.ToString("F1", inv) : "",
+                _minRam.ToString("F1", inv)
+            );
+
+            string maxLine = string.Join(",",
+                "MAX",
+                _maxFps.ToString("F1", inv),
+                _maxCpu.ToString("F1", inv),
+                _gpuCount > 0 ? _maxGpu.ToString("F1", inv) : "",
+                _maxRam.ToString("F1", inv)
+            );
+
+            if (mode == LoggingMode.Continuous)
+            {
+                // Write via the same stream to avoid append conflicts
+                _writer?.WriteLine(avgLine);
+                _writer?.WriteLine(minLine);
+                _writer?.WriteLine(maxLine);
+                try { _stream?.Flush(); } catch {}
+            }
+            else
+            {
+                // EndOnly: file is closed-and-reopened safely
+                if (File.Exists(_path))
+                    File.AppendAllText(_path, "\n" + avgLine + "\n" + minLine + "\n" + maxLine);
+            }
         }
     }
+    catch { }
+    finally
+    {
+        try { _writer?.Dispose(); } catch {}
+        try { _stream?.Dispose(); } catch {}
+    }
+}
+
 
     static int ResolveFallbackFps(FpsCap cap)
     {
@@ -239,7 +320,7 @@ public class PerformanceLogger : MonoBehaviour
         float dt = Time.unscaledDeltaTime;
         if (dt <= 0f)
         {
-            int safeFps = ResolveFallbackFps(targetFPS); // avoid -1
+            int safeFps = ResolveFallbackFps(targetFPS);
             dt = 1f / Mathf.Max(1, safeFps);
         }
 
@@ -254,6 +335,31 @@ public class PerformanceLogger : MonoBehaviour
 
         double ramMB = Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0);
 
+        // Accumulate for averages
+        _sumFps += fps;
+        _sumCpuMs += cpuMs;
+        if (!double.IsNaN(gpuMs))
+        {
+            _sumGpuMs += (float)gpuMs;
+            _gpuCount++;
+        }
+        _sumRam += (float)ramMB;
+        _sampleCount++;
+
+        // Track min/max
+        _minFps = Mathf.Min(_minFps, fps);
+        _maxFps = Mathf.Max(_maxFps, fps);
+        _minCpu = Mathf.Min(_minCpu, cpuMs);
+        _maxCpu = Mathf.Max(_maxCpu, cpuMs);
+        if (!double.IsNaN(gpuMs))
+        {
+            _minGpu = Mathf.Min(_minGpu, (float)gpuMs);
+            _maxGpu = Mathf.Max(_maxGpu, (float)gpuMs);
+        }
+        _minRam = Mathf.Min(_minRam, (float)ramMB);
+        _maxRam = Mathf.Max(_maxRam, (float)ramMB);
+
+        // Compose CSV row
         var inv = CultureInfo.InvariantCulture;
         string row = string.Join(",",
             Time.time.ToString("F1", inv),

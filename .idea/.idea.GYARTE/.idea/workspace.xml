@@ -6,10 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="27d5728e-e1d4-4141-a501-683bb14e2ba0" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceLogger.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceLogger.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileDebugHUD.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileDebugHUD.cs.meta" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -155,6 +153,7 @@
       <workItem from="1760602977386" duration="1817000" />
       <workItem from="1760607758596" duration="4892000" />
       <workItem from="1760647699696" duration="1814000" />
+      <workItem from="1760691900374" duration="1910000" />
     </task>
     <servers />
   </component>
