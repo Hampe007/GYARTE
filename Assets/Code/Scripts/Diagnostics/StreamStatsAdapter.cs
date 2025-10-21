@@ -16,12 +16,33 @@ public class StreamStatsAdapter : MonoBehaviour, IStreamStats
             if (Mirror.NetworkClient.active) return coordinator.ClientTiles.Count;
             if (Mirror.NetworkServer.active) return coordinator.ServerTiles.Count;
 #endif
-            return 0;
+            return coordinator.ClientTiles.Count;
         }
     }
 
-    // TileStreamCoordinator doesn’t expose queues directly,
-    // so keep these simple placeholders for now.
-    public int QueuedLoads => 0;
-    public int LoadsThisFrame => 0;
+    public int QueuedLoads
+    {
+        get
+        {
+            if (coordinator == null) return 0;
+#if MIRROR
+            if (Mirror.NetworkClient.active) return coordinator.ClientQueuedLoads;
+            if (Mirror.NetworkServer.active) return coordinator.ServerQueuedLoads;
+#endif
+            return coordinator.ClientQueuedLoads;
+        }
+    }
+
+    public int LoadsThisFrame
+    {
+        get
+        {
+            if (coordinator == null) return 0;
+#if MIRROR
+            if (Mirror.NetworkClient.active) return coordinator.ClientLoadsThisFrame;
+            if (Mirror.NetworkServer.active) return coordinator.ServerLoadsThisFrame;
+#endif
+            return coordinator.ClientLoadsThisFrame;
+        }
+    }
 }

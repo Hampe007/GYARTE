@@ -226,6 +226,10 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         ownerCamera.Prioritize();
 
         _cinemachineActive = true;
+        
+        // Lock and hide cursor
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     private void DeactivateLocalCamera()
@@ -244,6 +248,10 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         {
             DetachFallbackCamera();
         }
+        
+        // Unlock and show cursor
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
     private Transform GetDefaultFollowTarget()

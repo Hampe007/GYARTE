@@ -27,6 +27,14 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
+    
+    public int ServerQueuedLoads { get; private set; }
+    public int ClientQueuedLoads { get; private set; }
+    public int ServerLoadsThisFrame { get; private set; }
+    public int ClientLoadsThisFrame { get; private set; }
+
+    private int serverLoadFrame = -1;
+    private int clientLoadFrame = -1;
 
     public override void OnStartServer()
     {
@@ -102,15 +110,19 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         if (desired.SetEquals(serverLoaded))
         {
+            ServerQueuedLoads = 0;
             yield break;
         }
 
         var toLoad = desired.Except(serverLoaded).ToList();
         var toUnload = serverLoaded.Except(desired).ToList();
 
+        ServerQueuedLoads = toLoad.Count;
+        
         foreach (var path in toLoad)
         {
             yield return LoadTileServer(path);
+            ServerQueuedLoads = Mathf.Max(0, ServerQueuedLoads - 1);
         }
 
         foreach (var path in toUnload)
@@ -175,6 +187,7 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         NetworkServer.SpawnObjects();
+        IncrementServerLoadsThisFrame();
     }
 
     private IEnumerator UnloadTileServer(string path)
@@ -225,15 +238,19 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         if (desired.SetEquals(clientLoaded))
         {
+            ClientQueuedLoads = 0;
             yield break;
         }
 
         var toLoad = desired.Except(clientLoaded).ToList();
         var toUnload = clientLoaded.Except(desired).ToList();
 
+        ClientQueuedLoads = toLoad.Count;
+        
         foreach (var path in toLoad)
         {
             yield return LoadTileClient(path);
+            ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
         }
 
         foreach (var path in toUnload)
@@ -280,6 +297,8 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             yield return null;
         }
+        
+        IncrementClientLoadsThisFrame();
     }
 
     private IEnumerator UnloadTileClient(string path)
@@ -425,8 +444,13 @@ public class TileStreamCoordinator : NetworkBehaviour
                 var toLoad = desired.Except(clientLoaded).ToList();
                 var toUnload = clientLoaded.Except(desired).ToList();
 
+                ClientQueuedLoads = toLoad.Count;
+
                 foreach (var path in toLoad)
+                {
                     yield return LoadTileClient(path);
+                    ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
+                }
 
                 foreach (var path in toUnload)
                     yield return UnloadTileClient(path);
@@ -440,8 +464,35 @@ public class TileStreamCoordinator : NetworkBehaviour
 
                 lastCenter = center;
             }
+            else
+            {
+                ClientQueuedLoads = 0;
+            }
 
             yield return wait;
         }
+    }
+    private void IncrementServerLoadsThisFrame()
+    {
+        int frame = Time.frameCount;
+        if (frame != serverLoadFrame)
+        {
+            serverLoadFrame = frame;
+            ServerLoadsThisFrame = 0;
+        }
+
+        ServerLoadsThisFrame++;
+    }
+
+    private void IncrementClientLoadsThisFrame()
+    {
+        int frame = Time.frameCount;
+        if (frame != clientLoadFrame)
+        {
+            clientLoadFrame = frame;
+            ClientLoadsThisFrame = 0;
+        }
+
+        ClientLoadsThisFrame++;
     }
 }

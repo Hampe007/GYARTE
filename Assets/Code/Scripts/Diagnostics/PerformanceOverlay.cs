@@ -1,4 +1,3 @@
-// RuntimePerfOverlay.cs
 // Fixed overlay in the top-left corner, non-draggable.
 
 using System;
@@ -17,7 +16,7 @@ public class PerformanceOverlay : MonoBehaviour
     private KeyCode toggleKey = KeyCode.F1;
     private Vector2 position = new Vector2(0, 0);
     public bool visible = true;
-    public float scale = 1f;
+    public float scale = 3f;
 
     private float _emaDt = 0.0167f;
     private const float EmaAlpha = 0.1f;
@@ -35,7 +34,16 @@ public class PerformanceOverlay : MonoBehaviour
     {
         for (int i = 0; i < _dtHist.Length; i++) _dtHist[i] = _emaDt;
         if (streamStats == null)
-            streamStats = FindAnyObjectByType<MonoBehaviour>() as IStreamStats;
+        {
+            foreach (var behaviour in FindObjectsOfType<MonoBehaviour>(true))
+            {
+                if (behaviour is IStreamStats stats)
+                {
+                    streamStats = stats;
+                    break;
+                }
+            }
+        }
     }
 
     void Update()

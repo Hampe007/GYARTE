@@ -6,8 +6,18 @@
   <component name="ChangeListManager">
     <list default="true" id="27d5728e-e1d4-4141-a501-683bb14e2ba0" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.GYARTE/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceLogger.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceLogger.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/CustomNetworkManager.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/CustomNetworkManager.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceOverlay.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/PerformanceOverlay.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/StreamStatsAdapter.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/Diagnostics/StreamStatsAdapter.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/LobbyController.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/LobbyController.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/SimpleNetworkPlayerMovement.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/SimpleNetworkPlayerMovement.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Code/Scripts/Tiles/TileSliceSettings.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Code/Scripts/Tiles/TileSliceSettings.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Lobby.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Lobby.unity" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain.unity" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain/Terrain/Terrain_0_0_ad1edc72-22a4-4707-b4dd-4e455b2440d2.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/Level/Scenes/Terrain/Terrain/Terrain_0_0_ad1edc72-22a4-4707-b4dd-4e455b2440d2.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/World/Resources/TileIndex.asset" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Resources/TileIndex.asset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Assets/World/Scripts/TileStreamCoordinator.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ProjectSettings/EditorBuildSettings.asset" beforeDir="false" afterPath="$PROJECT_DIR$/ProjectSettings/EditorBuildSettings.asset" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,6 +164,8 @@
       <workItem from="1760607758596" duration="4892000" />
       <workItem from="1760647699696" duration="1814000" />
       <workItem from="1760691900374" duration="1910000" />
+      <workItem from="1761038919461" duration="558000" />
+      <workItem from="1761050792602" duration="3569000" />
     </task>
     <servers />
   </component>

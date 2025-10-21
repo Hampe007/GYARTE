@@ -149,7 +149,7 @@ public class CustomNetworkManager : NetworkManager
 
         try
         {
-            if (sceneName != "Game") return; // only swap in the Game scene
+            if (sceneName != "Terrain") return; // only swap in the Game scene
 
             // 1) Find the SpawnPointManager in the newly loaded Game scene
             var spawnMgr = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
