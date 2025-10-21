@@ -533,7 +533,7 @@ Camera:
   m_ShutterSpeed: 0.005
   m_Aperture: 16
   m_FocusDistance: 10
-  m_FocalLength: 50
+  m_FocalLength: 20.78461
   m_BladeCount: 5
   m_Curvature: {x: 2, y: 11}
   m_BarrelClipping: 0.25
@@ -548,7 +548,7 @@ Camera:
     height: 1
   near clip plane: 0.3
   far clip plane: 1000
-  field of view: 60
+  field of view: 60.000004
   orthographic: 0
   orthographic size: 5
   m_Depth: -1
@@ -575,7 +575,7 @@ Transform:
   m_GameObject: {fileID: 484476858}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.8, y: 0.8000001, z: -4}
+  m_LocalPosition: {x: 0.8, y: 0.8000001, z: -1893}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1543,8 +1543,9 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   index: {fileID: 11400000, guid: d51f79da29affb54383a44009ae0628e, type: 2}
-  innerRadius: 2
-  outerRadius: 3
+  player: {fileID: 0}
+  loadRadius: 500
+  edgeBuffer: 25
   scanInterval: 0.5
   logActions: 1
   offlineStandalone: 1
@@ -1943,6 +1944,7 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 698706188}
+  - {fileID: 484476863}
   - {fileID: 1478240973}
   - {fileID: 442848993}
   - {fileID: 1931227883}
@@ -1951,5 +1953,4 @@ SceneRoots:
   - {fileID: 945646049}
   - {fileID: 450241994}
   - {fileID: 1113782689}
-  - {fileID: 484476863}
   - {fileID: 718571812}

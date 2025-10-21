@@ -11,13 +11,13 @@ public static class TileIndexBuilder
     private const string AssetPath = "Assets/World/Resources/TileIndex.asset";
     private static readonly Regex NamePattern = new(@"_Tile_(?<x>-?\d+)_(?<y>-?\d+)$", RegexOptions.Compiled);
 
-    [MenuItem("Tiles/Rebuild TileIndex from Selection")]
-    public static void RebuildFromSelection()
+    [MenuItem("Tiles/Rebuild TileIndex")] 
+    public static void Rebuild()
     {
-        var selected = Selection.objects;
-        if (selected == null || selected.Length == 0)
+        var guids = AssetDatabase.FindAssets("t:Scene Tile_", new[] { "Assets" });
+        if (guids == null || guids.Length == 0)
         {
-            Debug.LogWarning("[TileIndexBuilder] Select one or more Tile_?_?.unity scenes first.");
+            Debug.LogWarning("[TileIndexBuilder] No Tile_?_?.unity scenes found in project.");
             return;
         }
 
@@ -32,9 +32,9 @@ public static class TileIndexBuilder
         var size = index.TileSizeMeters;
         var records = new Dictionary<Vector2Int, TileIndex.TileRecord>();
 
-        foreach (var obj in selected)
+        foreach (var guid in guids)
         {
-            var path = AssetDatabase.GetAssetPath(obj);
+            var path = AssetDatabase.GUIDToAssetPath(guid);
             if (string.IsNullOrEmpty(path) || Path.GetExtension(path) != ".unity")
             {
                 continue;
@@ -67,7 +67,7 @@ public static class TileIndexBuilder
 
         if (records.Count == 0)
         {
-            Debug.LogWarning("[TileIndexBuilder] No valid tile scenes found in selection.");
+            Debug.LogWarning("[TileIndexBuilder] No valid tile scenes found in project.");
             return;
         }
 
