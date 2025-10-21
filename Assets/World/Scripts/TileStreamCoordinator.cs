@@ -4,19 +4,28 @@ using System.Linq;
 using Mirror;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 public class TileStreamCoordinator : NetworkBehaviour
 {
     [Header("Configuration")]
     public TileIndex index;
-    public int innerRadius = 2;
-    public int outerRadius = 3;
+    [SerializeField] private Transform player;
+    [SerializeField] private float loadRadius = 500f;
+    [SerializeField] private float edgeBuffer = 25f;
     public float scanInterval = 0.5f;
     public bool logActions = false;
 
     private readonly HashSet<string> serverLoaded = new();
-    private readonly Dictionary<NetworkConnectionToClient, Vector2Int> lastCenters = new();
     private readonly HashSet<string> clientLoaded = new();
+    private readonly List<Vector3> tempPlayerPositions = new();
+
+    private float loadRadiusSquared;
+    private float unloadRadiusSquared;
+    private float cachedLoadRadius = -1f;
+    private float cachedEdgeBuffer = -1f;
 
     private Coroutine serverLoop;
     private Coroutine clientApplyCoroutine;
@@ -54,9 +63,46 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         serverLoaded.Clear();
-        lastCenters.Clear();
 
         base.OnStopServer();
+    }
+
+    private void Awake()
+    {
+        UpdateRadiusCache();
+    }
+
+    private void OnValidate()
+    {
+        UpdateRadiusCache();
+    }
+
+    private void LateUpdate()
+    {
+        UpdateRadiusCache();
+    }
+
+    private void UpdateRadiusCache()
+    {
+        if (loadRadius < 0f)
+        {
+            loadRadius = 0f;
+        }
+
+        if (edgeBuffer < 0f)
+        {
+            edgeBuffer = 0f;
+        }
+
+        if (!Mathf.Approximately(cachedLoadRadius, loadRadius) || !Mathf.Approximately(cachedEdgeBuffer, edgeBuffer))
+        {
+            cachedLoadRadius = loadRadius;
+            cachedEdgeBuffer = edgeBuffer;
+
+            loadRadiusSquared = loadRadius * loadRadius;
+            float unloadRadius = loadRadius + edgeBuffer;
+            unloadRadiusSquared = unloadRadius * unloadRadius;
+        }
     }
 
     private IEnumerator ServerLoop()
@@ -76,8 +122,10 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield break;
         }
 
+        UpdateRadiusCache();
+
         var desired = new HashSet<string>();
-        var validConnections = new HashSet<NetworkConnectionToClient>();
+        tempPlayerPositions.Clear();
 
         foreach (var kvp in NetworkServer.connections)
         {
@@ -87,25 +135,21 @@ public class TileStreamCoordinator : NetworkBehaviour
                 continue;
             }
 
-            validConnections.Add(conn);
-
-            var playerTransform = conn.identity.transform;
-            var center = index.WorldToTile(playerTransform.position);
-
-            bool moved = !lastCenters.TryGetValue(conn, out var previous) || previous != center;
-            lastCenters[conn] = center;
-
-            int radius = Mathf.Max(0, moved ? outerRadius : innerRadius);
-            foreach (var path in index.CoordsToSceneSet(center, radius))
-            {
-                desired.Add(path);
-            }
+            Vector3 position = conn.identity.transform.position;
+            tempPlayerPositions.Add(position);
+            AddTilesWithinRadius(position, desired, loadRadiusSquared);
         }
 
-        var staleConnections = lastCenters.Keys.Where(k => !validConnections.Contains(k)).ToList();
-        foreach (var stale in staleConnections)
+        if (tempPlayerPositions.Count == 0 && player != null)
         {
-            lastCenters.Remove(stale);
+            Vector3 position = player.position;
+            tempPlayerPositions.Add(position);
+            AddTilesWithinRadius(position, desired, loadRadiusSquared);
+        }
+
+        if (edgeBuffer > 0f && tempPlayerPositions.Count > 0)
+        {
+            MaintainHysteresis(serverLoaded, desired, tempPlayerPositions);
         }
 
         if (desired.SetEquals(serverLoaded))
@@ -332,71 +376,85 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     }
 
-    private void OnDrawGizmos()
+    private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
     {
-        // Guard against missing index or uninitialized dictionaries
         if (index == null)
-            return;
-
-        // Ensure lookups exist (OnEnable might not have run yet in edit mode)
-        var _ = index.Tiles; // forces ScriptableObject deserialization
-        var tileField = typeof(TileIndex).GetField("coordLookup", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (tileField?.GetValue(index) == null)
-            return;
-
-        // Skip when Mirror isn't active
-        if (!Application.isPlaying)
-            return;
-
-        Vector3? focusPosition = null;
-
-        if (isServer && NetworkServer.active && NetworkServer.connections != null)
         {
-            foreach (var conn in NetworkServer.connections.Values)
+            return;
+        }
+
+        var tiles = index.Tiles;
+        for (int i = 0; i < tiles.Count; ++i)
+        {
+            var record = tiles[i];
+            if (string.IsNullOrEmpty(record.scenePath))
             {
-                if (conn?.identity != null)
+                continue;
+            }
+
+            Vector3 center = record.worldBounds.center;
+            if ((center - position).sqrMagnitude <= radiusSquared)
+            {
+                destination.Add(record.scenePath);
+            }
+        }
+    }
+
+    private void MaintainHysteresis(HashSet<string> currentTiles, HashSet<string> desiredTiles, IList<Vector3> playerPositions)
+    {
+        if (index == null)
+        {
+            return;
+        }
+
+        foreach (var path in currentTiles)
+        {
+            if (desiredTiles.Contains(path))
+            {
+                continue;
+            }
+
+            if (!index.TryGetByScene(path, out var record))
+            {
+                continue;
+            }
+
+            Vector3 center = record.worldBounds.center;
+            for (int i = 0; i < playerPositions.Count; ++i)
+            {
+                if ((center - playerPositions[i]).sqrMagnitude <= unloadRadiusSquared)
                 {
-                    focusPosition = conn.identity.transform.position;
+                    desiredTiles.Add(path);
                     break;
                 }
             }
         }
-        else if (isClient && NetworkClient.localPlayer != null)
-        {
-            focusPosition = NetworkClient.localPlayer.transform.position;
-        }
-
-        if (!focusPosition.HasValue)
-            return;
-
-        var centerCoord = index.WorldToTile(focusPosition.Value);
-
-        Bounds worldBounds;
-        if (index.TryGetByCoord(centerCoord, out var found))
-        {
-            worldBounds = found.worldBounds;
-        }
-        else
-        {
-            var size = index.TileSizeMeters;
-            var halfX = size.x * 0.5f;
-            var halfY = size.y * 0.5f;
-            worldBounds = new Bounds(
-                new Vector3(centerCoord.x * size.x + halfX, focusPosition.Value.y, centerCoord.y * size.y + halfY),
-                new Vector3(size.x, 0f, size.y));
-        }
-
-        var tileCenter = worldBounds.center;
-        var sizeInner = new Vector3(index.TileSizeMeters.x * (innerRadius * 2 + 1), 0f,
-                                    index.TileSizeMeters.y * (innerRadius * 2 + 1));
-        var sizeOuter = new Vector3(index.TileSizeMeters.x * (outerRadius * 2 + 1), 0f,
-                                    index.TileSizeMeters.y * (outerRadius * 2 + 1));
-
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireCube(tileCenter, sizeInner);
-        Gizmos.color = Color.cyan;
-        Gizmos.DrawWireCube(tileCenter, sizeOuter);
     }
+
+#if UNITY_EDITOR
+    private void OnDrawGizmosSelected()
+    {
+        Transform target = player != null ? player : offlineTarget;
+        if (target == null && !Application.isPlaying)
+        {
+            var camera = Camera.main;
+            if (camera != null)
+            {
+                target = camera.transform;
+            }
+        }
+
+        if (target == null)
+        {
+            return;
+        }
+
+        UpdateRadiusCache();
+
+        Handles.color = Color.cyan;
+        Handles.DrawWireDisc(target.position, Vector3.up, loadRadius);
+    }
+#endif
     
     private void OnEnable()
     {
@@ -421,52 +479,49 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         var wait = new WaitForSeconds(scanInterval);
 
-        Vector2Int lastCenter = new Vector2Int(int.MinValue, int.MinValue);
         var desired = new HashSet<string>();
 
         while (isActiveAndEnabled && !NetworkServer.active && !NetworkClient.active)
         {
-            Transform t = offlineTarget != null ? offlineTarget : (Camera.main != null ? Camera.main.transform : null);
+            Transform t = offlineTarget != null ? offlineTarget : (player != null ? player : (Camera.main != null ? Camera.main.transform : null));
             if (t == null || index == null)
             {
+                ClientQueuedLoads = 0;
                 yield return wait;
                 continue;
             }
 
-            var center = index.WorldToTile(t.position);
+            UpdateRadiusCache();
 
-            if (center != lastCenter)
+            desired.Clear();
+            AddTilesWithinRadius(t.position, desired, loadRadiusSquared);
+
+            if (edgeBuffer > 0f)
             {
-                desired.Clear();
-                foreach (var path in index.CoordsToSceneSet(center, Mathf.Max(0, innerRadius)))
-                    desired.Add(path);
-
-                var toLoad = desired.Except(clientLoaded).ToList();
-                var toUnload = clientLoaded.Except(desired).ToList();
-
-                ClientQueuedLoads = toLoad.Count;
-
-                foreach (var path in toLoad)
-                {
-                    yield return LoadTileClient(path);
-                    ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
-                }
-
-                foreach (var path in toUnload)
-                    yield return UnloadTileClient(path);
-
-                clientLoaded.Clear();
-                foreach (var path in desired)
-                {
-                    if (UnityEngine.SceneManagement.SceneManager.GetSceneByPath(path).isLoaded)
-                        clientLoaded.Add(path);
-                }
-
-                lastCenter = center;
+                tempPlayerPositions.Clear();
+                tempPlayerPositions.Add(t.position);
+                MaintainHysteresis(clientLoaded, desired, tempPlayerPositions);
             }
-            else
+
+            var toLoad = desired.Except(clientLoaded).ToList();
+            var toUnload = clientLoaded.Except(desired).ToList();
+
+            ClientQueuedLoads = toLoad.Count;
+
+            foreach (var path in toLoad)
             {
-                ClientQueuedLoads = 0;
+                yield return LoadTileClient(path);
+                ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
+            }
+
+            foreach (var path in toUnload)
+                yield return UnloadTileClient(path);
+
+            clientLoaded.Clear();
+            foreach (var path in desired)
+            {
+                if (SceneManager.GetSceneByPath(path).isLoaded)
+                    clientLoaded.Add(path);
             }
 
             yield return wait;
