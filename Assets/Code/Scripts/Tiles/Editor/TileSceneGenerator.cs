@@ -30,7 +30,7 @@ public sealed class TileSceneGenerator : EditorWindow
     private readonly Dictionary<string, string> _gizmoStatus = new Dictionary<string, string>(32);
 
     [SerializeField] private TileSliceSettings settings;
-    [SerializeField] private string folder = "Assets/Scripts/Tiles";
+    [SerializeField] private string folder = "Assets/Level/Scenes/Tiles/";
     
     // Source (multi-terrain)
     [Header("Source Terrains")]
@@ -74,6 +74,8 @@ public sealed class TileSceneGenerator : EditorWindow
     [SerializeField] private bool onlyUpdateIfChanged = false; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
 
+    private Vector2 _scrollPos;
+    
     // Snapshot type (do NOT hold Terrain refs while running)
     private sealed class TerrainSnapshot
     {
@@ -87,6 +89,8 @@ public sealed class TileSceneGenerator : EditorWindow
 
     private void OnGUI()
     {
+        _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
+        
         EnsureSettingsAsset();
         EditorGUILayout.LabelField("Slice terrains → tile scenes, and safely re-slice later.", EditorStyles.boldLabel);
         EditorGUILayout.Space(6);
@@ -185,20 +189,67 @@ public sealed class TileSceneGenerator : EditorWindow
             copyTrees
         );
         
-        // Preview (best-effort, does not touch live Terrains when running)
+        // Preview all candidate terrains using the exact rules used by slicing
         if (!_isRunning)
         {
-            var anyTD = TryGetAnyTerrainDataForPreview();
-            if (anyTD != null)
+            var snaps = CollectSnapshots(onlySnapshotList: true);
+            if (snaps != null && snaps.Count > 0)
             {
-                var sz = anyTD.size;
-                int previewX = Mathf.CeilToInt(sz.x / tileSizeMeters);
-                int previewY = Mathf.CeilToInt(sz.z / tileSizeMeters);
-                EditorGUILayout.HelpBox($"Preview: {sz.x:0}×{sz.z:0} m → {previewX}×{previewY} tiles (~{tileSizeMeters:0} m each)", MessageType.Info);
+                int grandTotal = 0;
+                var sb = new StringBuilder(512);
+                sb.AppendLine("Preview:");
+
+                // Loop through all terrains that will be sliced
+                foreach (var s in snaps)
+                {
+                    ComputePreviewGridFor(s.data, out int nx, out int ny, out float fx, out float fy);
+                    grandTotal += nx * ny;
+
+                    var sz = s.data.size;
+
+                    // Align columns with padding
+                    string label = s.label.PadRight(20);
+                    string sizeStr = $"{sz.x,6:0.#}×{sz.z,-6:0.#}";
+                    string tilesStr = $"{nx,3}×{ny,-3}";
+                    string tileSizeStr = $"{fx,5:0.#}×{fy,-5:0.#}";
+                    sb.AppendLine($"{label} | {sizeStr} m | {tilesStr} tiles @ {tileSizeStr} m");
+                }
+
+                sb.AppendLine(new string('-', 70));
+                sb.AppendLine($"Total tiles: {grandTotal}");
+                sb.AppendLine($"Options: evenFit={evenFitNoRemainder}, squares={forceSquareTiles}, desired≈{tileSizeMeters:0.##} m");
+
+                // Monospace display, no internal scrolling
+                GUIStyle monoStyle = new GUIStyle(EditorStyles.label)
+                {
+                    font = EditorGUIUtility.Load("Fonts/RobotoMono/RobotoMono-Regular.ttf") as Font,
+                    richText = false,
+                    wordWrap = false,
+                    fontSize = 11,
+                    normal = { textColor = EditorStyles.label.normal.textColor }
+                };
+                if (monoStyle.font == null)
+                    monoStyle.font = Font.CreateDynamicFontFromOSFont("Consolas", 11);
+
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.Space(2);
+
+                foreach (var line in sb.ToString().Split('\n'))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    EditorGUILayout.LabelField(line, monoStyle);
+                }
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.EndVertical();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("No terrains found for preview. Check auto-collect prefix or assign terrains manually.", MessageType.Warning);
             }
         }
 
-        // --- Output settings ---
+        // Output settings
         sceneNamePattern = EditorGUILayout.TextField(
             new GUIContent(
                 "Scene Name Pattern",
@@ -297,6 +348,8 @@ public sealed class TileSceneGenerator : EditorWindow
             "• After reslicing, re-bake NavMesh/Lighting per tile.\n" +
             "• Generated scenes can be auto-added to Build Settings.",
             MessageType.Info);
+        
+        EditorGUILayout.EndScrollView();
     }
 
     private bool CanRun()
@@ -352,7 +405,11 @@ public sealed class TileSceneGenerator : EditorWindow
                 RunSliceOrReslice(cachedOrigin);
 
                 terrainTimer.Stop(); // stop individual timer
-                _terrainLog.AppendLine($"Finished {_currentTerrainLabel} in {terrainTimer.Elapsed.TotalSeconds:F1} seconds.");
+                
+                var elapsed = terrainTimer.Elapsed;
+                string formatted = $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s";
+                _terrainLog.AppendLine($"Finished {_currentTerrainLabel} in {formatted}.");
+
                 var changedKinds = new List<string>(4);
                 if (_changedHeights)  changedKinds.Add("heights");
                 if (_changedAlpha)    changedKinds.Add("splatmaps");
@@ -397,10 +454,13 @@ public sealed class TileSceneGenerator : EditorWindow
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            // --- Final run summary (single log) ---
+            // Final run summary log
             var sb = new StringBuilder(512);
             sb.AppendLine("[TileSceneGenerator] Final summary:");
-            sb.AppendLine($"• All terrains processed in {_globalTimer.Elapsed.TotalSeconds:F1} seconds total.");
+            
+            var totalTime = _globalTimer.Elapsed;
+            string formattedTime = $"{(int)totalTime.TotalMinutes}m {totalTime.Seconds}s";
+            sb.AppendLine($"• All terrains processed in {formattedTime} total.");
 
             if (_changedTerrains.Count > 0)
                 sb.AppendLine($"• Gizmo updated for {_changedTerrains.Count} terrain(s): {string.Join(", ", _changedTerrains)}");
@@ -485,7 +545,40 @@ public sealed class TileSceneGenerator : EditorWindow
         }
     }
 
-    // --- Compute tilesX/tilesY from meters for the CURRENT snapshot ---
+    // Compute a preview grid for an arbitrary TerrainData using current inspector options
+    private void ComputePreviewGridFor(TerrainData td, out int nx, out int ny, out float finalX, out float finalY)
+    {
+        if (td == null) throw new ArgumentNullException(nameof(td));
+        if (tileSizeMeters <= 0f) throw new ArgumentOutOfRangeException(nameof(tileSizeMeters));
+
+        var sz = td.size;
+        float desired = tileSizeMeters;
+
+        if (!evenFitNoRemainder)
+        {
+            nx = Mathf.Max(1, Mathf.CeilToInt(sz.x / desired));
+            ny = Mathf.Max(1, Mathf.CeilToInt(sz.z / desired));
+            finalX = sz.x / nx;
+            finalY = sz.z / ny;
+            return;
+        }
+
+        nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / desired));
+        ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / desired));
+        finalX = sz.x / nx;
+        finalY = sz.z / ny;
+
+        if (forceSquareTiles)
+        {
+            float s = Mathf.Min(finalX, finalY);
+            nx = Mathf.Max(1, Mathf.RoundToInt(sz.x / s));
+            ny = Mathf.Max(1, Mathf.RoundToInt(sz.z / s));
+            finalX = sz.x / nx;
+            finalY = sz.z / ny;
+        }
+    }
+    
+    // Compute tilesX/tilesY from meters for the CURRENT snapshot
     private void ComputeGridFromMeters()
     {
         if (_srcTD == null) throw new InvalidOperationException("Current Terrain has no TerrainData.");
