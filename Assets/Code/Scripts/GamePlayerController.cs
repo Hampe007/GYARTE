@@ -35,6 +35,32 @@ public sealed class GamePlayerController : NetworkBehaviour
     [Tooltip("Deadzone to ignore tiny stick drift (0..1).")]
     [SerializeField, Range(0f, 0.5f)] private float moveDeadzone = 0.1f;
 
+    [Header("Camera")]
+    [Tooltip("Root transform that yaws around the player for the follow camera.")]
+    [SerializeField] private Transform cameraOrbitRoot;
+    [Tooltip("Child transform that pitches up/down for the follow camera.")]
+    [SerializeField] private Transform cameraPitchPivot;
+    [Tooltip("Mouse/controller sensitivity multiplier for look input.")]
+    [SerializeField] private float lookSensitivity = 120f;
+    [Tooltip("Min/max pitch in degrees.")]
+    [SerializeField] private Vector2 pitchLimits = new Vector2(-65f, 75f);
+    [Tooltip("Invert vertical look input.")]
+    [SerializeField] private bool invertY;
+
+    [Header("Cinemachine (Optional)")]
+    [Tooltip("Owner-specific Cinemachine camera to hand off control to the local player.")]
+    [SerializeField] private CinemachineCamera ownerCamera;
+    [Tooltip("Override follow target for the Cinemachine camera.")]
+    [SerializeField] private Transform cameraFollowTarget;
+    [Tooltip("Override look-at target for the Cinemachine camera.")]
+    [SerializeField] private Transform cameraLookAtTarget;
+    [Tooltip("Priority to force this camera to the top when owned.")]
+    [SerializeField] private int ownerCameraPriority = 200;
+    [Tooltip("If true, disable the Cinemachine camera object for non-owners.")]
+    [SerializeField] private bool disableCameraForNonOwners = true;
+    [Tooltip("Crosshair to toggle alongside the cursor state.")]
+    [SerializeField] private GameObject crosshair;
+
     [Header("Prediction")]
     [Tooltip("If error > this, snap to server (meters). Otherwise, smooth.")]
     [SerializeField] private float snapThreshold = 0.5f;
@@ -71,11 +97,31 @@ public sealed class GamePlayerController : NetworkBehaviour
     private InputAction _moveA, _lookA, _jumpA, _sprintA, _crouchA, _interactA;
     private uint _nextSeq;
     private bool _isGrounded;
+    private float _cameraYaw;
+    private float _cameraPitch;
+    private bool _cursorLockRequested;
+    private bool _cameraAttached;
+    private bool _cinemachineActive;
+    private int _initialCameraPriority;
+    private bool _capturedInitialPriority;
 
     // ========= Unity / Mirror lifecycle =========
     private void Awake()
     {
         _cc = GetComponent<CharacterController>();
+        EnsureCameraRigTransforms();
+
+        if (crosshair != null)
+            crosshair.SetActive(false);
+
+        if (ownerCamera != null)
+        {
+            _initialCameraPriority = ownerCamera.Priority.Value;
+            _capturedInitialPriority = true;
+
+            if (disableCameraForNonOwners)
+                ownerCamera.gameObject.SetActive(false);
+        }
     }
 
     public override void OnStartAuthority()
@@ -85,6 +131,9 @@ public sealed class GamePlayerController : NetworkBehaviour
             BindInputs(true);
             // start facing forward
             _yaw = transform.eulerAngles.y;
+            InitializeCameraOrientation();
+            EnsureLocalCamera();
+            RequestCursorLock(true);
         }
         catch (System.Exception ex)
         {
@@ -99,10 +148,23 @@ public sealed class GamePlayerController : NetworkBehaviour
             BindInputs(false);
             _pending.Clear();
             _history.Clear();
+            RequestCursorLock(false);
+            DeactivateLocalCamera();
         }
         catch (System.Exception ex)
         {
             Debug.LogException(ex, this);
+        }
+    }
+
+    public override void OnStopClient()
+    {
+        base.OnStopClient();
+
+        if (isOwned)
+        {
+            RequestCursorLock(false);
+            DeactivateLocalCamera();
         }
     }
 
@@ -153,6 +215,9 @@ public sealed class GamePlayerController : NetworkBehaviour
             Vector2 look = Vector2.zero;
             if (_lookA != null) look = _lookA.ReadValue<Vector2>();
 
+            EnsureLocalCamera();
+            HandleLook(look, dt);
+
             bool jump = _jumpA != null && _jumpA.WasPressedThisFrame();
             bool sprint = _sprintA != null && _sprintA.IsPressed();
             bool crouchToggle = _crouchA != null && _crouchA.WasPressedThisFrame();
@@ -167,6 +232,7 @@ public sealed class GamePlayerController : NetworkBehaviour
                 jump = jump,
                 sprint = sprint,
                 crouch = _isCrouching,
+                yaw = _cameraYaw,
                 look = look
             };
             _pending.Enqueue(pkt);
@@ -186,6 +252,8 @@ public sealed class GamePlayerController : NetworkBehaviour
 
             // send to server
             CmdSubmitInput(pkt);
+
+            ApplyCameraOrientation();
         }
         catch (System.Exception ex)
         {
@@ -267,6 +335,8 @@ public sealed class GamePlayerController : NetworkBehaviour
                     ApplyTransform(_cc, transform, ref _vel, ref _yaw, dt);
                 }
             }
+
+            ApplyCameraOrientation();
         }
         catch (System.Exception ex)
         {
@@ -278,6 +348,8 @@ public sealed class GamePlayerController : NetworkBehaviour
 
     private void Simulate(InputPacket pkt, ref Vector3 vel, ref float yaw, float dt, bool isServerAuthoritative)
     {
+        _isCrouching = pkt.crouch;
+
         // Derive desired world-space move direction from camera yaw + stick
         Vector3 fwd = Quaternion.Euler(0f, pkt.yaw, 0f) * Vector3.forward;
         Vector3 right = Quaternion.Euler(0f, pkt.yaw, 0f) * Vector3.right;
@@ -319,5 +391,221 @@ public sealed class GamePlayerController : NetworkBehaviour
         {
             Debug.LogException(ex, cc);
         }
+    }
+
+    // ========= Camera & cursor helpers =========
+
+    private void EnsureCameraRigTransforms()
+    {
+        if (cameraOrbitRoot == null)
+        {
+            var orbitRoot = new GameObject("CameraOrbit");
+            orbitRoot.transform.SetParent(transform, false);
+            cameraOrbitRoot = orbitRoot.transform;
+        }
+
+        if (cameraPitchPivot == null)
+        {
+            var pitchPivot = new GameObject("CameraPivot");
+            pitchPivot.transform.SetParent(cameraOrbitRoot, false);
+            cameraPitchPivot = pitchPivot.transform;
+        }
+
+        if (cameraFollowTarget == null)
+            cameraFollowTarget = cameraPitchPivot;
+
+        if (cameraLookAtTarget == null)
+            cameraLookAtTarget = cameraPitchPivot;
+    }
+
+    private void EnsureLocalCamera()
+    {
+        if (!isOwned)
+            return;
+
+        if (ownerCamera != null)
+        {
+            if (!_cinemachineActive || !ownerCamera.gameObject.activeInHierarchy)
+                ActivateLocalCamera();
+        }
+        else
+        {
+            AttachFallbackCamera();
+        }
+    }
+
+    private void ActivateLocalCamera()
+    {
+        if (ownerCamera == null)
+        {
+            AttachFallbackCamera();
+            return;
+        }
+
+        DetachFallbackCamera();
+
+        int priority = ownerCameraPriority;
+        if (_capturedInitialPriority && priority <= _initialCameraPriority)
+            priority = _initialCameraPriority + 1;
+
+        ownerCamera.gameObject.SetActive(true);
+        ownerCamera.Follow = cameraFollowTarget != null ? cameraFollowTarget : GetDefaultFollowTarget();
+        ownerCamera.LookAt = cameraLookAtTarget != null ? cameraLookAtTarget : GetDefaultLookAtTarget();
+        ownerCamera.Priority.Value = priority;
+        ownerCamera.Prioritize();
+
+        _cinemachineActive = true;
+    }
+
+    private void DeactivateLocalCamera()
+    {
+        if (ownerCamera != null)
+        {
+            if (_capturedInitialPriority)
+                ownerCamera.Priority.Value = _initialCameraPriority;
+
+            if (disableCameraForNonOwners)
+                ownerCamera.gameObject.SetActive(false);
+
+            _cinemachineActive = false;
+        }
+
+        DetachFallbackCamera();
+    }
+
+    private Transform GetDefaultFollowTarget()
+    {
+        if (cameraPitchPivot != null)
+            return cameraPitchPivot;
+        if (cameraOrbitRoot != null)
+            return cameraOrbitRoot;
+        return transform;
+    }
+
+    private Transform GetDefaultLookAtTarget()
+    {
+        if (cameraPitchPivot != null)
+            return cameraPitchPivot;
+        if (cameraOrbitRoot != null)
+            return cameraOrbitRoot;
+        return transform;
+    }
+
+    private void AttachFallbackCamera()
+    {
+        if (cameraPitchPivot == null || _cameraAttached)
+            return;
+
+        var mainCam = Camera.main;
+        if (mainCam == null)
+            return;
+
+        mainCam.transform.SetParent(cameraPitchPivot, false);
+        mainCam.transform.localPosition = Vector3.zero;
+        mainCam.transform.localRotation = Quaternion.identity;
+        _cameraAttached = true;
+    }
+
+    private void DetachFallbackCamera()
+    {
+        if (!_cameraAttached)
+            return;
+
+        var mainCam = Camera.main;
+        if (mainCam != null && cameraPitchPivot != null && mainCam.transform.parent == cameraPitchPivot)
+            mainCam.transform.SetParent(null);
+
+        _cameraAttached = false;
+    }
+
+    private void InitializeCameraOrientation()
+    {
+        EnsureCameraRigTransforms();
+
+        _cameraYaw = cameraOrbitRoot != null
+            ? cameraOrbitRoot.rotation.eulerAngles.y
+            : transform.eulerAngles.y;
+
+        if (cameraPitchPivot != null)
+            _cameraPitch = NormalizeAngle(cameraPitchPivot.localEulerAngles.x);
+        else
+            _cameraPitch = 0f;
+
+        _cameraPitch = Mathf.Clamp(_cameraPitch, pitchLimits.x, pitchLimits.y);
+        ApplyCameraOrientation();
+    }
+
+    private void HandleLook(Vector2 lookDelta, float dt)
+    {
+        if (!_cursorLockRequested)
+            return;
+
+        if (lookDelta.sqrMagnitude > Mathf.Epsilon)
+        {
+            float yawDelta = lookDelta.x * lookSensitivity * dt;
+            float pitchDelta = lookDelta.y * lookSensitivity * dt;
+
+            _cameraYaw = NormalizeAngle(_cameraYaw + yawDelta);
+            float signedPitch = invertY ? pitchDelta : -pitchDelta;
+            _cameraPitch = Mathf.Clamp(_cameraPitch + signedPitch, pitchLimits.x, pitchLimits.y);
+        }
+    }
+
+    private void ApplyCameraOrientation()
+    {
+        if (cameraOrbitRoot != null)
+        {
+            float playerYaw = transform.eulerAngles.y;
+            float localYaw = NormalizeAngle(_cameraYaw - playerYaw);
+            cameraOrbitRoot.localRotation = Quaternion.Euler(0f, localYaw, 0f);
+        }
+
+        if (cameraPitchPivot != null)
+            cameraPitchPivot.localRotation = Quaternion.Euler(_cameraPitch, 0f, 0f);
+    }
+
+    private void ApplyCursorState()
+    {
+        if (!Application.isPlaying)
+            return;
+
+        Cursor.lockState = _cursorLockRequested ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !_cursorLockRequested;
+
+        if (crosshair != null)
+            crosshair.SetActive(_cursorLockRequested);
+    }
+
+    private void SetCursorLockInternal(bool locked)
+    {
+        _cursorLockRequested = locked;
+        ApplyCursorState();
+    }
+
+    public void RequestCursorLock(bool locked)
+    {
+        if (!isOwned)
+            return;
+
+        SetCursorLockInternal(locked);
+    }
+
+    public bool IsCursorLocked => _cursorLockRequested;
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (!isOwned)
+            return;
+
+        if (hasFocus)
+            ApplyCursorState();
+    }
+
+    private static float NormalizeAngle(float angle)
+    {
+        angle %= 360f;
+        if (angle > 180f) angle -= 360f;
+        if (angle < -180f) angle += 360f;
+        return angle;
     }
 }
