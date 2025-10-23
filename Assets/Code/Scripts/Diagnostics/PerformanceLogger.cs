@@ -23,6 +23,8 @@ public class PerformanceLogger : MonoBehaviour
     [SerializeField, Min(0.05f), Tooltip("Seconds between samples. 1 is a good default.\nLower = finer detail, larger files, more I/O.")]
     float sampleIntervalSeconds = 1f;
 
+    [SerializeField] float discardFirstSeconds = 5f;
+    
     [SerializeField, Tooltip(
          "Label written in each CSV row to identify the test run.\n" +
          "Purely informational — does not affect performance behavior.\n\n" +
@@ -35,7 +37,9 @@ public class PerformanceLogger : MonoBehaviour
          "  • temp — CSV file will automatically be deleted when unity quits\n\n" +
          "Tip: use simple lowercase tags with underscores so CSVs merge cleanly.")]
     string scenarioTag = "run";
+    
 
+    bool _deleteOnExit;
 
     [Header("Performance Target")]
     [SerializeField, Tooltip("Sets Application.targetFrameRate in Awake. vSync is disabled so this cap applies.")]
@@ -52,6 +56,28 @@ public class PerformanceLogger : MonoBehaviour
         [InspectorName("240")] _240 = 240,
         [InspectorName("Unlimited")] Unlimited = -1
     }
+    
+    // Graphics toggles
+    [Header("Diagnostics · Scenario Toggles")]
+    [SerializeField] private Terrain targetTerrain;
+    [SerializeField] private GameObject[] propGroups;
+
+    // Texture layer toggles
+    [SerializeField] private bool enableDirtLayer = true;
+    [SerializeField] private bool enableGrassLayer = true;
+    [SerializeField] private bool enableSnowLayer = true;
+
+    // Props toggle
+    [Tooltip("Rocks, trees etc.")]
+    [SerializeField] private bool enableProps = true;
+    
+    // Toggle keys
+    [SerializeField] private KeyCode togglePropsKey = KeyCode.F5;
+    [SerializeField] private KeyCode cycleTexturesKey = KeyCode.F6;
+
+    // Cache of original layers
+    private TerrainLayer[] _originalLayers;
+    private bool _layersCached;
     
     float _sumFps, _sumCpuMs, _sumGpuMs, _sumRam;
     int _sampleCount, _gpuCount;
@@ -73,6 +99,7 @@ public class PerformanceLogger : MonoBehaviour
     {
         QualitySettings.vSyncCount = 0; // ensure vSync doesn’t override the cap
         Application.targetFrameRate = (int)targetFPS;
+        Debug.Log($"[PerfLogger] Applying FPS cap {(int)targetFPS}");
 
         // Small delay for accuracy (in case Unity doesn’t apply instantly)
         StartCoroutine(VerifyFpsAfterDelay());
@@ -112,6 +139,12 @@ public class PerformanceLogger : MonoBehaviour
 
     void Start()
     {
+        DeleteOldTempFiles();
+        
+        CacheOriginalTerrainLayers();
+        ApplyGraphicsToggles();
+        LogScenarioStamp(); // implement to write a row/field with the current scenario flags
+        
         // Build full path under persistentDataPath/Logger/
         string logDir = Path.Combine(Application.persistentDataPath, "Logger");
         if (!Directory.Exists(logDir))
@@ -122,7 +155,8 @@ public class PerformanceLogger : MonoBehaviour
         _path = Path.Combine(logDir, fileName);
 
         // CSV header
-        string header = $"# Scenario: {scenarioTag}\n" + 
+        string header = $"# Scenario: {scenarioTag}\n" +
+                        $"# Content: {CurrentScenarioFlags()}\n" +
                         "time_s,fps,cpu_ms,gpu_ms,ram_mb";
 
         if (mode == LoggingMode.Continuous)
@@ -159,34 +193,51 @@ public class PerformanceLogger : MonoBehaviour
             : "";
 
         Debug.Log(
-            $"<b>[PerfLogger]</b> Mode={mode}, TargetFPS={targetFPS}\n" +
-            $"<b>Log file:</b> <color=#88CCFF>{_path}</color>{deletionNote}\n" +
-            $"<b>Open log folder:</b> <color=#88CCFF>{logDir}</color>"
+            $"<b>[PerfLogger]</b> Mode=<color=yellow>{mode}</color>, " +
+            $"TargetFPS=<color=lime>{targetFPS}</color>\n" +
+            $"<b>Log file:</b> {_path}{deletionNote}\n" +  // raw path = clickable
+            $"<b>Log folder:</b> <color=#88CCFF>{logDir}</color>"
         );
     }
 
     void Update()
     {
+        if (togglePropsKey != KeyCode.None && Input.GetKeyDown(togglePropsKey))
+        {
+            enableProps = !enableProps;
+            ApplyPropsToggle();
+            LogScenarioStamp();
+        }
+
+        if (cycleTexturesKey != KeyCode.None && Input.GetKeyDown(cycleTexturesKey))
+        {
+            CycleTextureLayerPreset();
+            ApplyTextureLayerToggles();
+            LogScenarioStamp();
+        }
+
         _t += Time.unscaledDeltaTime;
         if (_t < sampleIntervalSeconds) return;
         _t = 0f;
 
-        // FPS and CPU frame time
+        float elapsed = Time.time; // seconds since play
         float dt = Time.unscaledDeltaTime;
         float fps = dt > 0f ? 1f / dt : 0f;
         float cpuMs = dt * 1000f;
 
-        // GPU frame time
         FrameTimingManager.CaptureFrameTimings();
         double gpuMs = double.NaN;
         FrameTiming[] frames = new FrameTiming[1];
         if (FrameTimingManager.GetLatestTimings(1, frames) > 0)
             gpuMs = frames[0].gpuFrameTime;
 
-        // RAM in MB
         double ramMB = Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0);
 
-        // Accumulate for averages
+        /* Skip first N seconds to avoid startup spikes */
+        if (elapsed < discardFirstSeconds)
+            return;
+
+        // Accumulate stats only after warmup
         _sumFps += fps;
         _sumCpuMs += cpuMs;
         if (!double.IsNaN(gpuMs))
@@ -210,10 +261,10 @@ public class PerformanceLogger : MonoBehaviour
         _minRam = Mathf.Min(_minRam, (float)ramMB);
         _maxRam = Mathf.Max(_maxRam, (float)ramMB);
 
-        // Compose CSV row
+        // Write the CSV row normally
         var inv = CultureInfo.InvariantCulture;
         string row = string.Join(",",
-            Time.time.ToString("F1", inv),
+            elapsed.ToString("F1", inv),
             fps.ToString("F0", inv),
             cpuMs.ToString("F1", inv),
             double.IsNaN(gpuMs) ? "" : gpuMs.ToString("F1", inv),
@@ -231,81 +282,241 @@ public class PerformanceLogger : MonoBehaviour
         }
     }
     
+    // Call this from your UI/overlay buttons if you prefer
+    public void ApplyGraphicsToggles()
+    {
+        ApplyTextureLayerToggles();
+        ApplyPropsToggle();
+    }
+
+    // Explicit setter you can call before starting a benchmark
+    public void SetTextureToggles(bool dirt, bool grass, bool snow)
+    {
+        enableDirtLayer = dirt;
+        enableGrassLayer = grass;
+        enableSnowLayer = snow;
+        ApplyTextureLayerToggles();
+    }
+
+    public void SetPropsToggle(bool value)
+    {
+        enableProps = value;
+        ApplyPropsToggle();
+    }
+
+    private void ApplyPropsToggle()
+    {
+        if (propGroups == null) return;
+        for (int i = 0; i < propGroups.Length; i++)
+        {
+            if (propGroups[i] != null) propGroups[i].SetActive(enableProps);
+        }
+    }
+
+    // Terrain texture layer handling
+    private void CacheOriginalTerrainLayers()
+    {
+        if (_layersCached) return;
+        if (targetTerrain != null && targetTerrain.terrainData != null)
+        {
+            var layers = targetTerrain.terrainData.terrainLayers;
+            if (layers != null && layers.Length > 0)
+            {
+                _originalLayers = (TerrainLayer[])layers.Clone();
+                _layersCached = true;
+            }
+        }
+    }
+
+    private void ApplyTextureLayerToggles()
+    {
+        if (targetTerrain == null || targetTerrain.terrainData == null) return;
+
+        CacheOriginalTerrainLayers();
+        if (!_layersCached || _originalLayers == null) return;
+
+        // Build a filtered list based on layer names; non-matched layers are excluded
+        var list = new System.Collections.Generic.List<TerrainLayer>();
+        for (int i = 0; i < _originalLayers.Length; i++)
+        {
+            var layer = _originalLayers[i];
+            if (layer == null) continue;
+            var name = layer.name ?? string.Empty;
+
+            bool isDirt = name.IndexOf("dirt", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isGrass = name.IndexOf("grass", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isSnow = name.IndexOf("snow", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if ((isDirt && enableDirtLayer) ||
+                (isGrass && enableGrassLayer) ||
+                (isSnow && enableSnowLayer))
+            {
+                list.Add(layer);
+            }
+        }
+
+        // If nothing matched, assign an empty array to simulate "no painted layers"
+        targetTerrain.terrainData.terrainLayers = list.ToArray();
+
+        // Force a refresh so the change is visible immediately
+        targetTerrain.Flush();
+    }
+
+    // Simple preset cycler for testing via hotkey
+    private void CycleTextureLayerPreset()
+    {
+        if (enableDirtLayer && enableGrassLayer && enableSnowLayer)
+        {
+            enableDirtLayer = true;  enableGrassLayer = false; enableSnowLayer = false;
+            return;
+        }
+        if (enableDirtLayer && !enableGrassLayer && !enableSnowLayer)
+        {
+            enableDirtLayer = false; enableGrassLayer = true;  enableSnowLayer = false;
+            return;
+        }
+        if (!enableDirtLayer && enableGrassLayer && !enableSnowLayer)
+        {
+            enableDirtLayer = false; enableGrassLayer = false; enableSnowLayer = true;
+            return;
+        }
+        if (!enableDirtLayer && !enableGrassLayer && enableSnowLayer)
+        {
+            enableDirtLayer = false; enableGrassLayer = false; enableSnowLayer = false;
+            return;
+        }
+        enableDirtLayer = true; enableGrassLayer = true; enableSnowLayer = true;
+    }
+
+    // Emits a single compact tag so your CSV can group results by scenario
+    private void LogScenarioStamp()
+    {
+        // Example: call your existing logging API
+        // WriteMeta("Scenario", $"TL[D:{Bool01(enableDirtLayer)} G:{Bool01(enableGrassLayer)} S:{Bool01(enableSnowLayer)}] · Props:{Bool01(enableProps)}");
+    }
+    
+    private static int Bool01(bool v) => v ? 1 : 0;
+    private string CurrentScenarioFlags()
+    {
+        return $"TL[D:{Bool01(enableDirtLayer)} G:{Bool01(enableGrassLayer)} S:{Bool01(enableSnowLayer)}] · Props:{Bool01(enableProps)}";
+    }
+    
     void OnApplicationQuit()
     {
         // Ensure a final sample is taken right before exit
         ForceOneSample();
+        
+        // mark for deletion on quit if temp
+        if (scenarioTag.Equals("temp", StringComparison.OrdinalIgnoreCase))
+            _deleteOnExit = true;
     }
 
     void OnDestroy()
-{
-    try
     {
-        if (mode == LoggingMode.EndOnly && _buffer != null)
+        try
         {
-            foreach (var r in _rows) _buffer.AppendLine(r);
-            File.WriteAllText(_path, _buffer.ToString(), new UTF8Encoding(false));
-        }
-
-        _writer?.Flush();
-        _stream?.Flush();
-
-        if (_sampleCount > 0)
-        {
-            var inv = CultureInfo.InvariantCulture;
-
-            float avgFps = _sumFps / _sampleCount;
-            float avgCpu = _sumCpuMs / _sampleCount;
-            string avgGpuStr = _gpuCount > 0 ? (_sumGpuMs / _gpuCount).ToString("F1", inv) : "";
-            float avgRam = _sumRam / _sampleCount;
-
-            string avgLine = string.Join(",",
-                "AVERAGE",
-                avgFps.ToString("F1", inv),
-                avgCpu.ToString("F1", inv),
-                avgGpuStr,
-                avgRam.ToString("F1", inv)
-            );
-
-            string minLine = string.Join(",",
-                "MIN",
-                _minFps.ToString("F1", inv),
-                _minCpu.ToString("F1", inv),
-                _gpuCount > 0 ? _minGpu.ToString("F1", inv) : "",
-                _minRam.ToString("F1", inv)
-            );
-
-            string maxLine = string.Join(",",
-                "MAX",
-                _maxFps.ToString("F1", inv),
-                _maxCpu.ToString("F1", inv),
-                _gpuCount > 0 ? _maxGpu.ToString("F1", inv) : "",
-                _maxRam.ToString("F1", inv)
-            );
-
-            if (mode == LoggingMode.Continuous)
+            // If EndOnly, dump buffered rows first
+            if (mode == LoggingMode.EndOnly && _buffer != null)
             {
-                // Write via the same stream to avoid append conflicts
-                _writer?.WriteLine(avgLine);
-                _writer?.WriteLine(minLine);
-                _writer?.WriteLine(maxLine);
-                try { _stream?.Flush(); } catch {}
+                foreach (var r in _rows) _buffer.AppendLine(r);
+                File.WriteAllText(_path, _buffer.ToString(), new UTF8Encoding(false));
             }
-            else
+
+            _writer?.Flush();
+            _stream?.Flush();
+
+            if (_sampleCount > 0)
             {
-                // EndOnly: file is closed-and-reopened safely
-                if (File.Exists(_path))
-                    File.AppendAllText(_path, "\n" + avgLine + "\n" + minLine + "\n" + maxLine);
+                var inv = CultureInfo.InvariantCulture;
+
+                float avgFps = _sumFps / _sampleCount;
+                float avgCpu = _sumCpuMs / _sampleCount;
+                string avgGpuStr = _gpuCount > 0 ? (_sumGpuMs / _gpuCount).ToString("F1", inv) : "";
+                float avgRam = _sumRam / _sampleCount;
+
+                string avgLine = string.Join(",",
+                    "AVERAGE",
+                    avgFps.ToString("F1", inv),
+                    avgCpu.ToString("F1", inv),
+                    avgGpuStr,
+                    avgRam.ToString("F1", inv)
+                );
+
+                string minLine = string.Join(",",
+                    "MIN",
+                    _minFps.ToString("F1", inv),
+                    _minCpu.ToString("F1", inv),
+                    _gpuCount > 0 ? _minGpu.ToString("F1", inv) : "",
+                    _minRam.ToString("F1", inv)
+                );
+
+                string maxLine = string.Join(",",
+                    "MAX",
+                    _maxFps.ToString("F1", inv),
+                    _maxCpu.ToString("F1", inv),
+                    _gpuCount > 0 ? _maxGpu.ToString("F1", inv) : "",
+                    _maxRam.ToString("F1", inv)
+                );
+
+                if (mode == LoggingMode.Continuous)
+                {
+                    _writer?.WriteLine(avgLine);
+                    _writer?.WriteLine(minLine);
+                    _writer?.WriteLine(maxLine);
+                    try { _stream?.Flush(); } catch {}
+                }
+                else
+                {
+                    if (File.Exists(_path))
+                        File.AppendAllText(_path, "\n" + avgLine + "\n" + minLine + "\n" + maxLine);
+                }
+            }
+        }
+        catch { }
+        finally
+        {
+            // Close handles before deletion
+            try { _writer?.Dispose(); } catch {}
+            try { _stream?.Dispose(); } catch {}
+
+            // Delete temp logs after everything is written and closed
+            try
+            {
+                if (scenarioTag.Equals("temp", StringComparison.OrdinalIgnoreCase) && File.Exists(_path))
+                {
+                    File.Delete(_path);
+                    Debug.Log($"[PerfLogger] Deleted temp log: {_path}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PerfLogger] Failed to delete temp log: {ex.Message}");
             }
         }
     }
-    catch { }
-    finally
+    
+    void DeleteOldTempFiles()
     {
-        try { _writer?.Dispose(); } catch {}
-        try { _stream?.Dispose(); } catch {}
+        try
+        {
+            string dir = Path.Combine(Application.persistentDataPath, "Logger");
+            if (!Directory.Exists(dir)) return;
+
+            foreach (var file in Directory.GetFiles(dir, "perf_temp_*.csv"))
+            {
+                try
+                {
+                    File.Delete(file);
+                    Debug.Log($"[PerfLogger] Deleted old temp log: {file}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[PerfLogger] Failed to delete old temp log: {ex.Message}");
+                }
+            }
+        }
+        catch { }
     }
-}
 
 
     static int ResolveFallbackFps(FpsCap cap)
