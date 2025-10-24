@@ -2395,7 +2395,8 @@ MonoBehaviour:
   ripplesFadeToggle: 1
   surfaceType: 0
   geometryType: 3
-  meshRenderers: []
+  meshRenderers:
+  - {fileID: 0}
   timeMultiplier: 0.5
   scriptInteractions: 1
   cpuEvaluateRipples: 0
