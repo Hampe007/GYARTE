@@ -146,8 +146,8 @@ public sealed class TileSceneGenerator : EditorWindow
         tileSizeMeters = EditorGUILayout.FloatField(
             new GUIContent(
                 "Tile Size (meters)",
-                "Desired tile size in world meters. " +
-                "If 'Even Fit' is OFF, edges may have smaller leftover tiles. " +
+                "Desired tile size in world meters.\n\n" +
+                "If 'Even Fit' is OFF, edges may have smaller leftover tiles.\n\n" +
                 "If 'Even Fit' is ON, the size adjusts to divide evenly."
             ),
             tileSizeMeters
@@ -172,19 +172,21 @@ public sealed class TileSceneGenerator : EditorWindow
             );
         }
         
-        copyHeights = EditorGUILayout.Toggle(
+        EditorGUILayout.Space();
+        
+        copyHeights = EditorGUILayout.ToggleLeft(
             new GUIContent("Copy Heights", "Copies terrain height data into each tile."),
             copyHeights
         );
-        copyAlphamaps = EditorGUILayout.Toggle(
-            new GUIContent("Copy Alphamaps (Textures)", "Copies texture splatmap data (terrain painting) into tiles. Slower, larger output."),
+        copyAlphamaps = EditorGUILayout.ToggleLeft(
+            new GUIContent("Copy Splatmaps (Textures)", "Copies texture splatmap data (terrain painting) into tiles. Slower, larger output."),
             copyAlphamaps
         );
-        copyDetails = EditorGUILayout.Toggle(
+        copyDetails = EditorGUILayout.ToggleLeft(
             new GUIContent("Copy Details (Grass)", "Copies terrain detail layers (grass). Requires matching prototypes."),
             copyDetails
         );
-        copyTrees = EditorGUILayout.Toggle(
+        copyTrees = EditorGUILayout.ToggleLeft(
             new GUIContent("Copy Trees", "Copies tree instances into the tiles."),
             copyTrees
         );
@@ -278,7 +280,7 @@ public sealed class TileSceneGenerator : EditorWindow
             terrainDataPrefix
         );
 
-        subfolderPerTerrain = EditorGUILayout.Toggle(
+        subfolderPerTerrain = EditorGUILayout.ToggleLeft(
             new GUIContent(
                 "Subfolder Per Terrain",
                 "If enabled, each terrain’s tiles are saved inside its own subfolder under the root output folder. " +
@@ -287,10 +289,10 @@ public sealed class TileSceneGenerator : EditorWindow
             subfolderPerTerrain
         );
 
-        EditorGUILayout.Space(6);
+        EditorGUILayout.Space();
 
-        // --- Re-slice behaviour ---
-        nonDestructiveReslice = EditorGUILayout.Toggle(
+        // Re-slice behaviour
+        nonDestructiveReslice = EditorGUILayout.ToggleLeft(
             new GUIContent(
                 "Non-Destructive Re-slice",
                 "When enabled, the tool updates only the TerrainData inside existing tile scenes, " +
@@ -299,7 +301,7 @@ public sealed class TileSceneGenerator : EditorWindow
             nonDestructiveReslice
         );
 
-        onlyUpdateIfChanged = EditorGUILayout.Toggle(
+        onlyUpdateIfChanged = EditorGUILayout.ToggleLeft(
             new GUIContent(
                 "Only Update If Changed (heights)",
                 "When enabled, tiles are skipped if their heightmaps are identical to the source terrain. " +
@@ -308,7 +310,7 @@ public sealed class TileSceneGenerator : EditorWindow
             onlyUpdateIfChanged
         );
 
-        addToBuildSettings = EditorGUILayout.Toggle(
+        addToBuildSettings = EditorGUILayout.ToggleLeft(
             new GUIContent(
                 "Ensure In Build Settings",
                 "Automatically adds all generated tile scenes to the Unity Build Settings. " +
@@ -317,8 +319,7 @@ public sealed class TileSceneGenerator : EditorWindow
             addToBuildSettings
         );
 
-
-        EditorGUILayout.Space(10);
+        EditorGUILayout.Space();
         using (new EditorGUI.DisabledScope(!CanRun()))
         {
             if (GUILayout.Button("Run Slice / Re-slice"))

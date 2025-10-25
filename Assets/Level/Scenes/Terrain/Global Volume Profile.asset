@@ -59,7 +59,7 @@ MonoBehaviour:
   active: 1
   quality:
     m_OverrideState: 1
-    m_Value: 1
+    m_Value: 3
   enabled:
     m_OverrideState: 1
     m_Value: 1
@@ -77,7 +77,7 @@ MonoBehaviour:
     m_Value: 7054.1
   mipFogMaxMip:
     m_OverrideState: 1
-    m_Value: 0.5
+    m_Value: 0.4
   mipFogNear:
     m_OverrideState: 1
     m_Value: 0
@@ -86,13 +86,13 @@ MonoBehaviour:
     m_Value: 1000
   baseHeight:
     m_OverrideState: 1
-    m_Value: 44.8
+    m_Value: 0
   maximumHeight:
     m_OverrideState: 1
-    m_Value: 112.5
+    m_Value: 175
   meanFreePath:
     m_OverrideState: 1
-    m_Value: 24.1
+    m_Value: 20
   enableVolumetricFog:
     m_OverrideState: 1
     m_Value: 1
@@ -116,9 +116,9 @@ MonoBehaviour:
     m_Value: 0.75
   multipleScatteringIntensity:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 0.2
   m_FogControlMode:
-    m_OverrideState: 1
+    m_OverrideState: 0
     m_Value: 0
   screenResolutionPercentage:
     m_OverrideState: 1
@@ -128,7 +128,7 @@ MonoBehaviour:
     m_Value: 64
   m_VolumetricFogBudget:
     m_OverrideState: 1
-    m_Value: 0.5
+    m_Value: 0.52
   m_ResolutionDepthRatio:
     m_OverrideState: 1
     m_Value: 0.5
@@ -559,7 +559,7 @@ MonoBehaviour:
     m_Value: 0.5
   shapeSpeedMultiplier:
     m_OverrideState: 1
-    m_Value: 1
+    m_Value: 0.566
   erosionSpeedMultiplier:
     m_OverrideState: 1
     m_Value: 0.25
@@ -580,7 +580,7 @@ MonoBehaviour:
     m_Value: 1
   shadows:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 1
   shadowResolution:
     m_OverrideState: 1
     m_Value: 128

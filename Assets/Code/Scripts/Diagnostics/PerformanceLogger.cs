@@ -156,7 +156,6 @@ public class PerformanceLogger : MonoBehaviour
 
         // CSV header
         string header = $"# Scenario: {scenarioTag}\n" +
-                        $"# Content: {CurrentScenarioFlags()}\n" +
                         "time_s,fps,cpu_ms,gpu_ms,ram_mb";
 
         if (mode == LoggingMode.Continuous)
@@ -393,12 +392,6 @@ public class PerformanceLogger : MonoBehaviour
     {
         // Example: call your existing logging API
         // WriteMeta("Scenario", $"TL[D:{Bool01(enableDirtLayer)} G:{Bool01(enableGrassLayer)} S:{Bool01(enableSnowLayer)}] · Props:{Bool01(enableProps)}");
-    }
-    
-    private static int Bool01(bool v) => v ? 1 : 0;
-    private string CurrentScenarioFlags()
-    {
-        return $"TL[D:{Bool01(enableDirtLayer)} G:{Bool01(enableGrassLayer)} S:{Bool01(enableSnowLayer)}] · Props:{Bool01(enableProps)}";
     }
     
     void OnApplicationQuit()
