@@ -600,7 +600,9 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         transform = null;
 
-        var dolly = FindFirstCinemachineComponent(
+        var ownerScene = gameObject.scene;
+
+        var dolly = FindFirstCinemachineComponent(ownerScene,
             "Unity.Cinemachine.CinemachineSplineDollyCart",
             "Unity.Cinemachine.CinemachineDollyCart",
             "Cinemachine.CinemachineSplineDollyCart",
@@ -631,33 +633,19 @@ public class TileStreamCoordinator : NetworkBehaviour
             }
         }
 
-        var brain = FindFirstCinemachineComponent(
+        var brain = FindFirstCinemachineComponent(ownerScene,
             "Unity.Cinemachine.CinemachineBrain",
             "Cinemachine.CinemachineBrain");
         if (brain != null)
         {
-            if (brain is Behaviour behaviour)
-            {
-                if (behaviour.isActiveAndEnabled)
-                {
-                    transform = behaviour.transform;
-                    if (transform != null)
-                    {
-                        return true;
-                    }
-                }
-            }
-            else if (brain is Component component && component.gameObject.activeInHierarchy)
+            if (brain is Component component && component.transform != null)
             {
                 transform = component.transform;
-                if (transform != null)
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
-        var cineCamera = FindFirstCinemachineComponent(
+        var cineCamera = FindFirstCinemachineComponent(ownerScene,
             "Unity.Cinemachine.CinemachineCamera",
             "Cinemachine.CinemachineVirtualCameraBase",
             "Cinemachine.CinemachineVirtualCamera");
@@ -715,8 +703,10 @@ public class TileStreamCoordinator : NetworkBehaviour
         return null;
     }
 
-    private Component FindFirstCinemachineComponent(params string[] qualifiedNames)
+    private Component FindFirstCinemachineComponent(Scene preferredScene, params string[] qualifiedNames)
     {
+        Component fallback = null;
+
         for (int i = 0; i < qualifiedNames.Length; ++i)
         {
             Type type = ResolveType(qualifiedNames[i]);
@@ -728,19 +718,40 @@ public class TileStreamCoordinator : NetworkBehaviour
             var objects = Resources.FindObjectsOfTypeAll(type);
             for (int j = 0; j < objects.Length; ++j)
             {
-                if (objects[j] is Component component && component.transform != null && component.gameObject.scene.IsValid())
+                if (objects[j] is not Component component)
                 {
-                    if (component is Behaviour behaviour && !behaviour.isActiveAndEnabled)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
+                var go = component.gameObject;
+                if (!go.scene.IsValid())
+                {
+                    continue;
+                }
+
+                if (!go.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                if (component.transform == null)
+                {
+                    continue;
+                }
+
+                if (preferredScene.IsValid() && go.scene == preferredScene)
+                {
                     return component;
+                }
+
+                if (fallback == null)
+                {
+                    fallback = component;
                 }
             }
         }
 
-        return null;
+        return fallback;
     }
 
     private static Type ResolveType(string fullName)
