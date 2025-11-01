@@ -1,6 +1,8 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Mirror;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -21,6 +23,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private readonly HashSet<string> serverLoaded = new();
     private readonly HashSet<string> clientLoaded = new();
     private readonly List<Vector3> tempPlayerPositions = new();
+    private static readonly Dictionary<string, Type> cinemachineTypeCache = new();
 
     private float loadRadiusSquared;
     private float unloadRadiusSquared;
@@ -44,6 +47,37 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private int serverLoadFrame = -1;
     private int clientLoadFrame = -1;
+
+    private bool EnsureIndexLoaded()
+    {
+        if (index != null)
+        {
+            return true;
+        }
+
+        index = Resources.Load<TileIndex>("TileIndex");
+        return index != null;
+    }
+
+    private void TryStartOfflineLoop()
+    {
+        if (!offlineStandalone || offlineLoop != null || !isActiveAndEnabled)
+        {
+            return;
+        }
+
+        if (NetworkServer.active || NetworkClient.active)
+        {
+            return;
+        }
+
+        if (!EnsureIndexLoaded())
+        {
+            return;
+        }
+
+        offlineLoop = StartCoroutine(OfflineLoop());
+    }
 
     public override void OnStartServer()
     {
@@ -70,6 +104,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private void Awake()
     {
         UpdateRadiusCache();
+        TryStartOfflineLoop();
     }
 
     private void OnValidate()
@@ -80,6 +115,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private void LateUpdate()
     {
         UpdateRadiusCache();
+        TryStartOfflineLoop();
     }
 
     private void UpdateRadiusCache()
@@ -434,13 +470,13 @@ public class TileStreamCoordinator : NetworkBehaviour
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
-        Transform target = player != null ? player : offlineTarget;
+        Transform target = ResolveStreamingAnchor();
         if (target == null && !Application.isPlaying)
         {
-            var camera = Camera.main;
-            if (camera != null)
+            var sceneView = SceneView.lastActiveSceneView;
+            if (sceneView != null && sceneView.camera != null)
             {
-                target = camera.transform;
+                target = sceneView.camera.transform;
             }
         }
 
@@ -459,10 +495,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private void OnEnable()
     {
         // Offline mode: run when Mirror is not active
-        if (offlineStandalone && !NetworkServer.active && !NetworkClient.active && index != null)
-        {
-            if (offlineLoop == null) offlineLoop = StartCoroutine(OfflineLoop());
-        }
+        TryStartOfflineLoop();
     }
 
     private void OnDisable()
@@ -483,7 +516,14 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         while (isActiveAndEnabled && !NetworkServer.active && !NetworkClient.active)
         {
-            Transform t = offlineTarget != null ? offlineTarget : (player != null ? player : (Camera.main != null ? Camera.main.transform : null));
+            if (!EnsureIndexLoaded())
+            {
+                ClientQueuedLoads = 0;
+                yield return wait;
+                continue;
+            }
+
+            Transform t = ResolveStreamingAnchor();
             if (t == null || index == null)
             {
                 ClientQueuedLoads = 0;
@@ -526,6 +566,230 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             yield return wait;
         }
+
+        offlineLoop = null;
+    }
+
+    private Transform ResolveStreamingAnchor()
+    {
+        if (offlineTarget != null)
+        {
+            return offlineTarget;
+        }
+
+        if (player != null)
+        {
+            return player;
+        }
+
+        if (TryGetCinemachineTransform(out var cinemachineTransform))
+        {
+            return cinemachineTransform;
+        }
+
+        var mainCamera = Camera.main;
+        if (mainCamera != null)
+        {
+            return mainCamera.transform;
+        }
+
+        return null;
+    }
+
+    private bool TryGetCinemachineTransform(out Transform transform)
+    {
+        transform = null;
+
+        var ownerScene = gameObject.scene;
+
+        var dolly = FindFirstCinemachineComponent(ownerScene,
+            "Unity.Cinemachine.CinemachineSplineDollyCart",
+            "Unity.Cinemachine.CinemachineDollyCart",
+            "Cinemachine.CinemachineSplineDollyCart",
+            "Cinemachine.CinemachineDollyCart");
+        if (dolly != null)
+        {
+            var type = dolly.GetType();
+
+            var cartTransform = GetTransformProperty(type, dolly, "Cart");
+            if (cartTransform == null)
+            {
+                cartTransform = GetTransformProperty(type, dolly, "CartTransform");
+            }
+
+            if (cartTransform != null)
+            {
+                transform = cartTransform;
+                return true;
+            }
+
+            if (dolly is Component component)
+            {
+                transform = component.transform;
+                if (transform != null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        var brain = FindFirstCinemachineComponent(ownerScene,
+            "Unity.Cinemachine.CinemachineBrain",
+            "Cinemachine.CinemachineBrain");
+        if (brain != null)
+        {
+            if (brain is Component component && component.transform != null)
+            {
+                transform = component.transform;
+                return true;
+            }
+        }
+
+        var cineCamera = FindFirstCinemachineComponent(ownerScene,
+            "Unity.Cinemachine.CinemachineCamera",
+            "Cinemachine.CinemachineVirtualCameraBase",
+            "Cinemachine.CinemachineVirtualCamera");
+        if (cineCamera is Component cameraComponent && cameraComponent.gameObject.activeInHierarchy)
+        {
+            transform = cameraComponent.transform;
+            return transform != null;
+        }
+
+        return false;
+    }
+
+    private static Transform GetTransformProperty(Type type, object instance, string propertyName)
+    {
+        var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && typeof(Transform).IsAssignableFrom(property.PropertyType))
+        {
+            return property.GetValue(instance) as Transform;
+        }
+
+        var field = type.GetField(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field != null && typeof(Transform).IsAssignableFrom(field.FieldType))
+        {
+            return field.GetValue(instance) as Transform;
+        }
+
+        var properties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        for (int i = 0; i < properties.Length; ++i)
+        {
+            if (properties[i].Name == propertyName || properties[i].Name == "transform")
+            {
+                continue;
+            }
+
+            if (typeof(Transform).IsAssignableFrom(properties[i].PropertyType))
+            {
+                return properties[i].GetValue(instance) as Transform;
+            }
+        }
+
+        var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        for (int i = 0; i < fields.Length; ++i)
+        {
+            if (fields[i].Name == propertyName)
+            {
+                continue;
+            }
+
+            if (typeof(Transform).IsAssignableFrom(fields[i].FieldType))
+            {
+                return fields[i].GetValue(instance) as Transform;
+            }
+        }
+
+        return null;
+    }
+
+    private Component FindFirstCinemachineComponent(Scene preferredScene, params string[] qualifiedNames)
+    {
+        Component fallback = null;
+
+        for (int i = 0; i < qualifiedNames.Length; ++i)
+        {
+            Type type = ResolveType(qualifiedNames[i]);
+            if (type == null)
+            {
+                continue;
+            }
+
+            var objects = Resources.FindObjectsOfTypeAll(type);
+            for (int j = 0; j < objects.Length; ++j)
+            {
+                if (objects[j] is not Component component)
+                {
+                    continue;
+                }
+
+                var go = component.gameObject;
+                if (!go.scene.IsValid())
+                {
+                    continue;
+                }
+
+                if (!go.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                if (component.transform == null)
+                {
+                    continue;
+                }
+
+                if (preferredScene.IsValid() && go.scene == preferredScene)
+                {
+                    return component;
+                }
+
+                if (fallback == null)
+                {
+                    fallback = component;
+                }
+            }
+        }
+
+        return fallback;
+    }
+
+    private static Type ResolveType(string fullName)
+    {
+        if (string.IsNullOrEmpty(fullName))
+        {
+            return null;
+        }
+
+        if (cinemachineTypeCache.TryGetValue(fullName, out var cached))
+        {
+            return cached;
+        }
+
+        var type = Type.GetType(fullName);
+        if (type == null)
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (int i = 0; i < assemblies.Length; ++i)
+            {
+                try
+                {
+                    type = assemblies[i].GetType(fullName);
+                }
+                catch (ReflectionTypeLoadException)
+                {
+                    continue;
+                }
+
+                if (type != null)
+                {
+                    break;
+                }
+            }
+        }
+
+        cinemachineTypeCache[fullName] = type;
+        return type;
     }
     private void IncrementServerLoadsThisFrame()
     {
