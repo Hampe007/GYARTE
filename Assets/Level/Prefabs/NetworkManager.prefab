@@ -51,7 +51,7 @@ MonoBehaviour:
   headlessStartMode: 0
   editorAutoStart: 0
   sendRate: 60
-  offlineScene: Assets/Level/Scenes/MainMenu.unity
+  offlineScene: Assets/Level/Scenes/CustomSplashScreen.unity
   onlineScene: Assets/Level/Scenes/Lobby.unity
   offlineSceneLoadDelay: 2.5
   transport: {fileID: 3027290161697678052}

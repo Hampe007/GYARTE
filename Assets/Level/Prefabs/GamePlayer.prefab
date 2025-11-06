@@ -154,7 +154,6 @@ GameObject:
   - component: {fileID: 2378182816258748432}
   - component: {fileID: 2390004149154834839}
   - component: {fileID: 4363578727518332494}
-  - component: {fileID: 9042525316114211153}
   m_Layer: 0
   m_Name: GamePlayer
   m_TagString: Untagged
@@ -255,42 +254,6 @@ CharacterController:
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 1, z: 0}
---- !u!114 &9042525316114211153
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3981346026934122420}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8487ed11056894f4dbf7e649ce495dcd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  syncDirection: 0
-  syncMode: 0
-  syncInterval: 0
-  moveSpeed: 4.6
-  sprintMultiplier: 1.5
-  crouchMultiplier: 0.6
-  gravity: 19.62
-  jumpVelocity: 5.8
-  rotationSpeed: 720
-  inputActions: {fileID: -944628639613478452, guid: 681c85fdb666c18468091285b0e3aed0, type: 3}
-  moveDeadzone: 0.1
-  cameraOrbitRoot: {fileID: 0}
-  cameraPitchPivot: {fileID: 0}
-  lookSensitivity: 120
-  pitchLimits: {x: -65, y: 75}
-  invertY: 0
-  ownerCamera: {fileID: 2360885559995802379}
-  cameraFollowTarget: {fileID: 9068229714869644655}
-  cameraLookAtTarget: {fileID: 1820474190217819978}
-  ownerCameraPriority: 200
-  disableCameraForNonOwners: 1
-  crosshair: {fileID: 0}
-  snapThreshold: 0.5
-  historySize: 32
 --- !u!1 &4802116812725024762
 GameObject:
   m_ObjectHideFlags: 0
