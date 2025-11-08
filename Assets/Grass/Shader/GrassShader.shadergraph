@@ -1473,7 +1473,7 @@
     "m_Title": "HeightBlend",
     "m_Position": {
         "x": -1558.0,
-        "y": 73.00010681152344
+        "y": 73.00013732910156
     }
 }
 
@@ -1589,7 +1589,7 @@
     "m_Title": "Depth",
     "m_Position": {
         "x": -1855.0,
-        "y": -720.9999389648438
+        "y": -720.9998779296875
     }
 }
 
@@ -2556,8 +2556,8 @@
     "m_ObjectId": "60c3340f1fdf4cf1a9034aa59f667a36",
     "m_Title": "TerrainColor",
     "m_Position": {
-        "x": -2018.0,
-        "y": -329.9999084472656
+        "x": -2017.9998779296875,
+        "y": -329.9998779296875
     }
 }
 
@@ -3279,10 +3279,10 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -1339.0,
-            "y": 341.9998779296875,
-            "width": 206.0,
-            "height": 130.00006103515626
+            "x": -1409.9998779296875,
+            "y": 294.0,
+            "width": 208.0,
+            "height": 314.0
         }
     },
     "m_Slots": [
@@ -3695,7 +3695,7 @@
     "m_ObjectId": "8d0bde419dfc419c8a2635a45c32d6d5",
     "m_Title": "Wind Sway",
     "m_Position": {
-        "x": -1960.0,
+        "x": -1959.9998779296875,
         "y": -1094.0
     }
 }
@@ -3962,7 +3962,7 @@
     },
     "m_Name": "Smoothstep",
     "m_DrawState": {
-        "m_Expanded": false,
+        "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
             "x": -912.9998779296875,
@@ -4519,7 +4519,7 @@
     },
     "m_Name": "Vector 3",
     "m_DrawState": {
-        "m_Expanded": false,
+        "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
             "x": -1307.0001220703125,
