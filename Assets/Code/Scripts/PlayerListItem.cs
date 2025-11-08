@@ -18,6 +18,7 @@ public class PlayerListItem : MonoBehaviour
     
     
     protected Callback<AvatarImageLoaded_t> imageLoaded;
+    private Button playerIconButton;
 
     public void ChangeReadyStatus()
     {
@@ -35,6 +36,15 @@ public class PlayerListItem : MonoBehaviour
     private void Awake()
     {
         imageLoaded = Callback<AvatarImageLoaded_t>.Create(OnImageLoaded);
+        WirePlayerIconClickHandler();
+    }
+
+    private void OnDestroy()
+    {
+        if (playerIconButton != null)
+        {
+            playerIconButton.onClick.RemoveListener(OpenPlayerSteamProfile);
+        }
     }
 
     private void GetPlayerIcon()
@@ -66,6 +76,34 @@ public class PlayerListItem : MonoBehaviour
             GetPlayerIcon();
         ChangeReadyStatus();
     }
+
+    private void WirePlayerIconClickHandler()
+    {
+        if (playerIcon == null) return;
+
+        playerIconButton = playerIcon.GetComponent<Button>();
+        if (playerIconButton == null) return;
+
+        playerIconButton.onClick.RemoveListener(OpenPlayerSteamProfile);
+        playerIconButton.onClick.AddListener(OpenPlayerSteamProfile);
+    }
+
+    private void OpenPlayerSteamProfile()
+    {
+        if (PlayerSteamID == 0)
+        {
+            Debug.LogWarning("[UI] Cannot open Steam profile: missing SteamID.");
+            return;
+        }
+
+        if (!SteamManager.Initialized)
+        {
+            Debug.LogWarning("[UI] Cannot open Steam profile: Steam is not initialized.");
+            return;
+        }
+
+        SteamFriends.ActivateGameOverlayToUser("steamid", new CSteamID(PlayerSteamID));
+    }
     
     private Texture2D GetSteamImageAsTexture(int iImage)
     {
@@ -90,7 +128,7 @@ public class PlayerListItem : MonoBehaviour
                     System.Buffer.BlockCopy(image, src, flipped, dst, rowSize);
                 }
 
-                texture = new Texture2D((int)width, (int)height, TextureFormat.RGBA32, false, true);
+                texture = new Texture2D((int)width, (int)height, TextureFormat.RGBA32, false, false);
                 texture.LoadRawTextureData(flipped);
                 texture.Apply();
             }
