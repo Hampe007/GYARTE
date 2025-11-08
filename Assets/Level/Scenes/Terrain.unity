@@ -274,7 +274,7 @@ GameObject:
   - component: {fileID: 424206614}
   - component: {fileID: 424206613}
   m_Layer: 0
-  m_Name: Directional Light
+  m_Name: Sun
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -433,7 +433,7 @@ Light:
   serializedVersion: 11
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 2205.4602
+  m_Intensity: 2000
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -536,7 +536,7 @@ MonoBehaviour:
   writeThroughOnDesktop: 1
   sampleIntervalSeconds: 1
   discardFirstSeconds: 5
-  scenarioTag: nottemp
+  scenarioTag: temp
   targetFPS: -1
   targetTerrain: {fileID: 1228233516}
   propGroups: []
@@ -2434,16 +2434,16 @@ MonoBehaviour:
   waterCurrentDebugMode: 0
   currentDebugMultiplier: 0.1
   waterFoamDebugMode: 0
-  underWater: 0
+  underWater: 1
   volumeBounds: {fileID: 0}
   volumeDepth: 50
   volumeHeight: 0
   volumePrority: 0
-  absorptionDistanceMultiplier: 1
+  absorptionDistanceMultiplier: 0.001
   underWaterAmbientProbeContribution: 1
   underWaterScatteringColorMode: 0
   underWaterScatteringColor: {r: 0, g: 0.27, b: 0.23, a: 1}
-  underWaterRefraction: 0
+  underWaterRefraction: 1
   decalRegionSize: {x: 200, y: 200}
   decalRegionAnchor: {fileID: 0}
   supportLargeCurrent: 0
@@ -2699,11 +2699,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   spawns:
-  - position: {x: 3700, y: 90, z: 3200}
-    yaw: 0
-  - position: {x: 3710, y: 90, z: 3210}
-    yaw: 0
-  - position: {x: 3721, y: 90, z: 3220}
+  - position: {x: 3800, y: 48.00598, z: 3430}
     yaw: 0
 --- !u!4 &1113782689
 Transform:
