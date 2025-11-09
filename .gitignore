@@ -28,6 +28,9 @@
 # Visual Studio cache directory
 .vs/
 
+# VS Code workspace settings
+/.vscode/
+
 # JetBrains (Rider/IntelliJ) IDE project files
 /.idea/
 
