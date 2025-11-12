@@ -261,7 +261,7 @@ Material:
     - _UseEmissiveIntensity: 0
     - _UseShadowThreshold: 0
     - _UseTerrainColor: 1
-    - _WindIntensity: 0.1
+    - _WindIntensity: 0.05
     - _WindSpeed: 0.1
     - _ZTestDepthEqualForOpaque: 3
     - _ZTestGBuffer: 3
