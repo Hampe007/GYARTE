@@ -919,31 +919,77 @@ public sealed class TileSceneGenerator : EditorWindow
 
     if (copyTrees && treePrototypes != null && treePrototypes.Length > 0)
     {
-        td.treePrototypes = treePrototypes;
-        var srcTrees = _srcTD.treeInstances;
-        var tileTrees = new List<TreeInstance>(128);
+        var filteredTreePrototypes = FilterValidTreePrototypes(treePrototypes, out var prototypeRemap);
 
-        float x0 = tx / (float)tilesX, x1 = (tx + 1) / (float)tilesX;
-        float y0 = ty / (float)tilesY, y1 = (ty + 1) / (float)tilesY;
-
-        foreach (var t in srcTrees)
+        if (filteredTreePrototypes.Length > 0)
         {
-            if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
+            td.treePrototypes = filteredTreePrototypes;
+            var srcTrees = _srcTD.treeInstances ?? Array.Empty<TreeInstance>();
+            var tileTrees = new List<TreeInstance>(Mathf.Max(32, srcTrees.Length));
+
+            float x0 = tx / (float)tilesX, x1 = (tx + 1) / (float)tilesX;
+            float y0 = ty / (float)tilesY, y1 = (ty + 1) / (float)tilesY;
+
+            foreach (var t in srcTrees)
             {
-                var nt = t;
-                nt.position = new Vector3(
-                    Mathf.InverseLerp(x0, x1, t.position.x),
-                    t.position.y,
-                    Mathf.InverseLerp(y0, y1, t.position.z)
-                );
-                tileTrees.Add(nt);
+                int remappedIndex = (t.prototypeIndex >= 0 && t.prototypeIndex < prototypeRemap.Length)
+                    ? prototypeRemap[t.prototypeIndex]
+                    : -1;
+
+                if (remappedIndex < 0)
+                    continue; // Source prototype is missing
+
+                if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
+                {
+                    var nt = t;
+                    nt.prototypeIndex = remappedIndex;
+                    nt.position = new Vector3(
+                        Mathf.InverseLerp(x0, x1, t.position.x),
+                        t.position.y,
+                        Mathf.InverseLerp(y0, y1, t.position.z)
+                    );
+                    tileTrees.Add(nt);
+                }
             }
+
+            td.treeInstances = tileTrees.ToArray();
         }
-        td.treeInstances = tileTrees.ToArray();
+        else
+        {
+            td.treePrototypes = Array.Empty<TreePrototype>();
+            td.treeInstances = Array.Empty<TreeInstance>();
+        }
     }
 
     return td;
 }
+
+    private static TreePrototype[] FilterValidTreePrototypes(TreePrototype[] prototypes, out int[] prototypeRemap)
+    {
+        if (prototypes == null || prototypes.Length == 0)
+        {
+            prototypeRemap = Array.Empty<int>();
+            return Array.Empty<TreePrototype>();
+        }
+
+        var filtered = new List<TreePrototype>(prototypes.Length);
+        prototypeRemap = new int[prototypes.Length];
+
+        for (int i = 0; i < prototypes.Length; i++)
+        {
+            var proto = prototypes[i];
+            if (proto?.prefab == null)
+            {
+                prototypeRemap[i] = -1;
+                continue;
+            }
+
+            prototypeRemap[i] = filtered.Count;
+            filtered.Add(proto);
+        }
+
+        return filtered.ToArray();
+    }
 
     private static void SaveOrReplaceTerrainDataAsset(string tdPath, TerrainData newTD, TerrainData existingTD)
     {
