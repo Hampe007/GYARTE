@@ -714,32 +714,8 @@ public sealed class TileSceneGenerator : EditorWindow
 
         var layers = _srcTD.terrainLayers;
         var detailPrototypes = _srcTD.detailPrototypes;
+        var treePrototypes = _srcTD.treePrototypes;
         int detailLayerCount = detailPrototypes?.Length ?? 0;
-        
-        TreePrototype[] treePrototypes = null;
-        int[] treePrototypeRemap = null;
-        if (copyTrees)
-        {
-            treePrototypes = SanitizeTreePrototypes(_srcTD.treePrototypes, out treePrototypeRemap, out int missingPrototypeCount);
-
-            if (missingPrototypeCount > 0)
-            {
-                Debug.LogWarning(
-                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
-                    "Tree instances using them will be skipped during slicing."
-                );
-            }
-
-            if (treePrototypes == null || treePrototypes.Length == 0)
-            {
-                treePrototypes = null;
-                Debug.LogWarning(
-                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' does not contain any valid tree prefabs to copy."
-                );
-            }
-        }
-
-        bool canCopyTrees = copyTrees && (treePrototypes?.Length ?? 0) > 0;
 
         int total = tilesX * tilesY;
         int processed = 0;
@@ -758,7 +734,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     // Build new TerrainData from the source master
                     TerrainData newTD = BuildTileTerrainData(
                         tx, ty, hStepX, hStepY, aStepX, aStepY, dStepX, dStepY,
-                        layers, detailLayerCount, treePrototypes, treePrototypeRemap
+                        layers, detailLayerCount, treePrototypes
                     );
 
                     // --- Save/replace TerrainData under the DATA subfolder, include terrain name ---
@@ -780,7 +756,7 @@ public sealed class TileSceneGenerator : EditorWindow
                         if (copyDetails && (_srcTD.detailPrototypes?.Length ?? 0) > 0)
                             detailsChanged = !DetailsEqual(existingTD, newTD);
 
-                        if (canCopyTrees)
+                        if (copyTrees && (_srcTD.treePrototypes?.Length ?? 0) > 0)
                         {
                             bool treesEqual = TreesEqualAndDeltas(existingTD, newTD, out treesAdded, out treesRemoved, out bool modified);
                             treesChanged = !treesEqual;
@@ -875,7 +851,7 @@ public sealed class TileSceneGenerator : EditorWindow
     private TerrainData BuildTileTerrainData(
     int tx, int ty,
     int hStepX, int hStepY, int aStepX, int aStepY, int dStepX, int dStepY,
-    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes, int[] treePrototypeRemap)
+    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes)
 {
     var td = new TerrainData();
 
@@ -943,44 +919,77 @@ public sealed class TileSceneGenerator : EditorWindow
 
     if (copyTrees && treePrototypes != null && treePrototypes.Length > 0)
     {
-        td.treePrototypes = treePrototypes;
-        var srcTrees = _srcTD.treeInstances;
-        var tileTrees = new List<TreeInstance>(128);
+        var filteredTreePrototypes = FilterValidTreePrototypes(treePrototypes, out var prototypeRemap);
 
-        float x0 = tx / (float)tilesX, x1 = (tx + 1) / (float)tilesX;
-        float y0 = ty / (float)tilesY, y1 = (ty + 1) / (float)tilesY;
-
-        foreach (var t in srcTrees)
+        if (filteredTreePrototypes.Length > 0)
         {
-            if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
+            td.treePrototypes = filteredTreePrototypes;
+            var srcTrees = _srcTD.treeInstances ?? Array.Empty<TreeInstance>();
+            var tileTrees = new List<TreeInstance>(Mathf.Max(32, srcTrees.Length));
+
+            float x0 = tx / (float)tilesX, x1 = (tx + 1) / (float)tilesX;
+            float y0 = ty / (float)tilesY, y1 = (ty + 1) / (float)tilesY;
+
+            foreach (var t in srcTrees)
             {
-                var nt = t;
-                int mappedPrototypeIndex = nt.prototypeIndex;
-                if (treePrototypeRemap != null && treePrototypeRemap.Length > 0)
+                int remappedIndex = (t.prototypeIndex >= 0 && t.prototypeIndex < prototypeRemap.Length)
+                    ? prototypeRemap[t.prototypeIndex]
+                    : -1;
+
+                if (remappedIndex < 0)
+                    continue; // Source prototype is missing
+
+                if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
                 {
-                    if (nt.prototypeIndex < 0 || nt.prototypeIndex >= treePrototypeRemap.Length)
-                        continue;
-
-                    mappedPrototypeIndex = treePrototypeRemap[nt.prototypeIndex];
+                    var nt = t;
+                    nt.prototypeIndex = remappedIndex;
+                    nt.position = new Vector3(
+                        Mathf.InverseLerp(x0, x1, t.position.x),
+                        t.position.y,
+                        Mathf.InverseLerp(y0, y1, t.position.z)
+                    );
+                    tileTrees.Add(nt);
                 }
-
-                if (mappedPrototypeIndex < 0 || mappedPrototypeIndex >= treePrototypes.Length)
-                    continue;
-
-                nt.prototypeIndex = mappedPrototypeIndex;
-                nt.position = new Vector3(
-                    Mathf.InverseLerp(x0, x1, t.position.x),
-                    t.position.y,
-                    Mathf.InverseLerp(y0, y1, t.position.z)
-                );
-                tileTrees.Add(nt);
             }
+
+            td.treeInstances = tileTrees.ToArray();
         }
-        td.treeInstances = tileTrees.ToArray();
+        else
+        {
+            td.treePrototypes = Array.Empty<TreePrototype>();
+            td.treeInstances = Array.Empty<TreeInstance>();
+        }
     }
 
     return td;
 }
+
+    private static TreePrototype[] FilterValidTreePrototypes(TreePrototype[] prototypes, out int[] prototypeRemap)
+    {
+        if (prototypes == null || prototypes.Length == 0)
+        {
+            prototypeRemap = Array.Empty<int>();
+            return Array.Empty<TreePrototype>();
+        }
+
+        var filtered = new List<TreePrototype>(prototypes.Length);
+        prototypeRemap = new int[prototypes.Length];
+
+        for (int i = 0; i < prototypes.Length; i++)
+        {
+            var proto = prototypes[i];
+            if (proto?.prefab == null)
+            {
+                prototypeRemap[i] = -1;
+                continue;
+            }
+
+            prototypeRemap[i] = filtered.Count;
+            filtered.Add(proto);
+        }
+
+        return filtered.ToArray();
+    }
 
     private static void SaveOrReplaceTerrainDataAsset(string tdPath, TerrainData newTD, TerrainData existingTD)
     {
@@ -1042,40 +1051,6 @@ public sealed class TileSceneGenerator : EditorWindow
         if (scenes.Any(s => s.path == scenePath)) return;
         scenes.Add(new EditorBuildSettingsScene(scenePath, true));
         EditorBuildSettings.scenes = scenes.ToArray();
-    }
-    
-    private static TreePrototype[] SanitizeTreePrototypes(TreePrototype[] prototypes, out int[] remap, out int removedCount)
-    {
-        removedCount = 0;
-
-        if (prototypes == null || prototypes.Length == 0)
-        {
-            remap = Array.Empty<int>();
-            return Array.Empty<TreePrototype>();
-        }
-
-        var valid = new List<TreePrototype>(prototypes.Length);
-        remap = new int[prototypes.Length];
-
-        for (int i = 0; i < prototypes.Length; i++)
-        {
-            var proto = prototypes[i];
-            if (proto != null && proto.prefab != null)
-            {
-                remap[i] = valid.Count;
-                valid.Add(proto);
-            }
-            else
-            {
-                remap[i] = -1;
-                removedCount++;
-            }
-        }
-
-        if (valid.Count == prototypes.Length)
-            return prototypes;
-
-        return valid.ToArray();
     }
 
     private static bool HeightsEqual(TerrainData a, TerrainData b)
