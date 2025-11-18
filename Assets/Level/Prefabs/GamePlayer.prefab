@@ -154,7 +154,6 @@ GameObject:
   - component: {fileID: 2378182816258748432}
   - component: {fileID: 2390004149154834839}
   - component: {fileID: 4363578727518332494}
-  - component: {fileID: 6145790065676680519}
   m_Layer: 0
   m_Name: GamePlayer
   m_TagString: Untagged
@@ -255,33 +254,6 @@ CharacterController:
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 1, z: 0}
---- !u!114 &6145790065676680519
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3981346026934122420}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 98d78ac59e27f4740b8560ec939c6b1e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  syncDirection: 0
-  syncMode: 0
-  syncInterval: 0
-  moveSpeed: 4.5
-  sprintMultiplier: 1.4
-  gravity: 20
-  jumpVelocity: 5.5
-  cameraPivot: {fileID: 2483859189452863594}
-  lookSensitivity: 2
-  pitchLimits: {x: -75, y: 80}
-  ownerCamera: {fileID: 2360885559995802379}
-  cameraFollowTarget: {fileID: 9068229714869644655}
-  cameraLookAtTarget: {fileID: 2483859189452863594}
-  ownerCameraPriority: 100
-  disableCameraForNonOwners: 1
 --- !u!1 &4802116812725024762
 GameObject:
   m_ObjectHideFlags: 0

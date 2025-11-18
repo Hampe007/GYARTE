@@ -1,0 +1,88 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fd3c72d856706034f8ddcda7cb323423, type: 3}
+  m_Name: CharacterMovement
+  m_EditorClassIdentifier: 
+  walkSpeed: 3.5
+  sprintSpeed: 6.5
+  swimSpeed: 3
+  groundAcceleration: 35
+  airAcceleration: 10
+  waterAcceleration: 12
+  groundFriction: 6
+  airDrag: 0.2
+  waterDrag: 1.5
+  slopeLimitDegrees: 45
+  groundCheckDistance: 0.25
+  stickToGroundDistance: 0.2
+  stepOffsetHeight: 0.3
+  stepCheckDistance: 0.25
+  gravityScale: 1
+  jumpForce: 5.5
+  coyoteTime: 0.1
+  airControl: 0.032
+  dodgeImpulse: 8
+  dodgeCooldown: 0.5
+  dodgeIFrameDuration: 0.25
+  dodgeDirectionLockSeconds: 0.1
+  attackSpeedMultiplier: 0.9
+  attackAccelerationMultiplier: 0.7
+  stunnedSpeedMultiplier: 0.5
+  blockSprintWhenStunned: 1
+  blockDodgeWhenStunned: 1
+  swimStaminaDrainPerSec: 5
+  swimRiseSpeed: 3
+  swimSinkSpeed: 2.5
+  swimVerticalAcceleration: 8
+  waterGravityScale: 0.25
+  drowningNoGroundSeconds: 0
+  drownDamagePerSec: 25
+  swimEnterHeightRatio: 0.6
+  swimExitHeightRatio: 0.2
+  drownRequiresUngrounded: 0
+  drownSubmersionThreshold: 0.9
+  useDrownDamageCurve: 1
+  drownDamageCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.15
+      value: 0.3
+      inSlope: 2.64137
+      outSlope: 2.64137
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 0.25
+      value: 1
+      inSlope: 2
+      outSlope: 2
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  drownCurveDuration: 5
+  inputBufferMs: 120

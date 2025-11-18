@@ -9,6 +9,9 @@ EditorBuildSettings:
     path: Assets/OutdoorsScene.unity
     guid: 8124e5870f4fd4c779e7a5f994e84ad1
   - enabled: 1
+    path: Assets/Level/Scenes/CustomSplashScreen.unity
+    guid: 6c26255b91af9024f80785a841182580
+  - enabled: 1
     path: Assets/Level/Scenes/MainMenu.unity
     guid: f708c4dddfd89374f94639d093abe96d
   - enabled: 1
@@ -17622,5 +17625,5 @@ EditorBuildSettings:
     path: Assets/Level/Scenes/Tiles/Terrain_West/Scenes/Terrain_West_Tile_0_19.unity
     guid: ebb6594c645c66442995025d28d8e9c1
   m_configObjects:
-    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 35845fe01580c41289b024647b1d1c53, type: 3}
+    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 681c85fdb666c18468091285b0e3aed0, type: 3}
   m_UseUCBPForAssetBundles: 0
