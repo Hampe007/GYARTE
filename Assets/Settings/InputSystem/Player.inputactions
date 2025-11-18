@@ -52,6 +52,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "Dodge",
+                    "type": "Button",
+                    "id": "6989ae38-e96b-4652-a511-6de38d2cb518",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "Interact",
                     "type": "Button",
                     "id": "1bc1df3b-3ac3-435b-9bc2-d9e73919d5d5",
@@ -61,9 +70,54 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "TogglePerspective",
+                    "name": "Inventroy",
                     "type": "Button",
-                    "id": "976696cc-c07f-411f-b4e1-bb2c8c66ea46",
+                    "id": "221dc7ab-a6c6-4f6f-9e7c-b01b03d000fe",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Slot1",
+                    "type": "Button",
+                    "id": "ddb182c4-5e7c-4b52-9846-036cf9da2165",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Slot2",
+                    "type": "Button",
+                    "id": "1f3408e9-222f-4387-b7a1-2ecba103260b",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Slot3",
+                    "type": "Button",
+                    "id": "1e874ff8-689d-4724-9e50-7c5260a0d15f",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Primary Attack",
+                    "type": "Button",
+                    "id": "71ae01c2-3a93-49f9-8fc4-7d8b952ba5ce",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Secondary Attack",
+                    "type": "Button",
+                    "id": "1e2d3c19-74b2-4fb4-b5ab-850335040f7a",
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
@@ -249,23 +303,78 @@
                 },
                 {
                     "name": "",
-                    "id": "08b0aac6-9f52-4c65-b7dd-8b71f4bbe6a9",
-                    "path": "<Keyboard>/v",
+                    "id": "d8563db3-1166-4be9-9e85-50f159834f3e",
+                    "path": "<Keyboard>/1",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
-                    "action": "TogglePerspective",
+                    "action": "Slot1",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
                 {
                     "name": "",
-                    "id": "7e6f180f-9cad-432e-9676-32f9e55069e1",
-                    "path": "<Gamepad>/rightStickPress",
+                    "id": "1cb85651-9d3a-4114-98f0-fe79f685260e",
+                    "path": "<Keyboard>/2",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
-                    "action": "TogglePerspective",
+                    "action": "Slot2",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "3b121c82-b050-4144-b3c2-592e3ce87e08",
+                    "path": "<Keyboard>/3",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Slot3",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "1c081fcb-d78c-4e38-aa33-bbde69d802c1",
+                    "path": "<Keyboard>/leftAlt",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Dodge",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "08a50ca2-f9d2-43db-8584-49e57dbe10fc",
+                    "path": "<Keyboard>/i",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Inventroy",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "0a0139e1-0420-4e4c-8b29-fdc38a13344c",
+                    "path": "<Mouse>/leftButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Primary Attack",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "89d681aa-c969-4d19-8696-5ab61dab4332",
+                    "path": "<Mouse>/rightButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Secondary Attack",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
