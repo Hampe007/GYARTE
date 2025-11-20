@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
@@ -32,6 +33,17 @@ public class TerrainPrefabPainter : EditorWindow
     [SerializeField] PrefabPaintRule[] prefabRules = new PrefabPaintRule[0];
     [SerializeField] bool[] ruleFoldouts = new bool[0];
 
+    public float clearRadius = 1.5f; // meters around prefab where grass is removed
+
+    [SerializeField] private List<SpawnCircleVolume> globalCircles;
+    bool useGlobalCircles = false;
+
+    public bool placingVolume = false;
+    public VolumeAreaPreview preview;
+    public PrefabPaintRule volumeRuleTarget;
+    
+    private Transform prefabRoot;
+
     #endregion
 
     #region RuleClass
@@ -49,6 +61,10 @@ public class TerrainPrefabPainter : EditorWindow
         public float noiseScale = 0.01f;
         public float noiseThreshold = 0.5f;
         public Vector2 randomScale = new Vector2(0.9f, 1.2f);
+        public float clearRadius = 1.5f;
+        public bool deleteBeforeSpawn = false;
+        public bool useVolumeArea = false;
+        public ForestAreaVolume volumeRef = null;
     }
 
     #endregion
@@ -140,8 +156,6 @@ public class TerrainPrefabPainter : EditorWindow
         splatIndex = splatPopup - 1;
     }
 
-
-
     void DrawDetailModeSection()
     {
         EditorGUILayout.Space(10);
@@ -169,13 +183,11 @@ public class TerrainPrefabPainter : EditorWindow
         }
     }
 
-
-
     void DrawDetailMaskSection()
     {
         if (!terrain || !terrain.terrainData)
             return;
-        
+
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Height and Slope Filters", EditorStyles.boldLabel);
 
@@ -198,13 +210,11 @@ public class TerrainPrefabPainter : EditorWindow
         );
     }
 
-
-
     void DrawDetailNoiseSection()
     {
         if (!terrain || !terrain.terrainData)
             return;
-        
+
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Detail Noise Filter", EditorStyles.boldLabel);
 
@@ -219,21 +229,17 @@ public class TerrainPrefabPainter : EditorWindow
         );
     }
 
-
-
     void DrawSeedSection()
     {
         if (!terrain || !terrain.terrainData)
             return;
-        
+
         EditorGUILayout.Space(6);
         seed = EditorGUILayout.IntField(
             new GUIContent("Seed", "Random seed used for both detail and prefab placement."),
             seed
         );
     }
-
-
 
     void DrawPrefabRuleSection()
     {
@@ -244,6 +250,52 @@ public class TerrainPrefabPainter : EditorWindow
             new GUIContent("Paint Prefabs", "Enable prefab placement after detail painting."),
             paintPrefabs
         );
+
+        // Global circle system UI
+        useGlobalCircles = EditorGUILayout.Toggle(
+            new GUIContent("Use Global Circle Mask", "Limit prefab painting to one or more circular areas."),
+            useGlobalCircles
+        );
+        
+        if (useGlobalCircles)
+        {
+            var circles = FindObjectsByType<SpawnCircleVolume>(FindObjectsSortMode.None);
+
+            if (circles.Length == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "Global Circle Mask is enabled but no circles exist.\n" +
+                    "Spawning will fall back to normal terrain mode.",
+                    MessageType.Warning
+                );
+            }
+        }
+
+
+        if (useGlobalCircles)
+        {
+            EditorGUILayout.BeginVertical("box");
+
+            if (GUILayout.Button("Add Circle Volume"))
+            {
+                var c = CreateGlobalCircleVolume();
+                globalCircles.Add(c);
+            }
+
+            if (globalCircles.Count > 0)
+            {
+                EditorGUILayout.LabelField($"Circles active: {globalCircles.Count}");
+
+                if (GUILayout.Button("Remove All Circles"))
+                {
+                    foreach (var c in globalCircles)
+                        if (c) DestroyImmediate(c.gameObject);
+                    globalCircles.Clear();
+                }
+            }
+
+            EditorGUILayout.EndVertical();
+        }
 
         if (!paintPrefabs)
             return;
@@ -327,6 +379,53 @@ public class TerrainPrefabPainter : EditorWindow
                 rule.randomScale
             );
 
+            rule.clearRadius = EditorGUILayout.FloatField(
+                new GUIContent("Clear Radius", "No-grass radius in meters around this prefab."),
+                rule.clearRadius
+            );
+
+            rule.deleteBeforeSpawn = EditorGUILayout.Toggle(
+                new GUIContent("Delete Old Prefabs", "Deletes all previously spawned prefabs before applying this rule."),
+                rule.deleteBeforeSpawn
+            );
+
+            rule.useVolumeArea = EditorGUILayout.Toggle(
+                new GUIContent("Use Volume Area", "Only spawn props inside a shaped volume region."),
+                rule.useVolumeArea
+            );
+            
+            // Warning if Volume Area enabled but missing volume object
+            if (rule.useVolumeArea && rule.volumeRef == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "Volume Area is enabled but no volume exists.\n" +
+                    "The rule will spawn normally until you create one.",
+                    MessageType.Warning
+                );
+            }
+
+            if (rule.useVolumeArea)
+            {
+                if (rule.volumeRef == null)
+                {
+                    if (GUILayout.Button("Create Volume Area"))
+                    {
+                        rule.volumeRef = CreateForestVolumeGizmo(rule.name);
+                        // If you ever want interactive placement, call StartPlacingVolume(rule) instead.
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("Volume area active in scene. Move/resize it freely.", MessageType.Info);
+
+                    if (GUILayout.Button("Remove Volume Area"))
+                    {
+                        DestroyImmediate(rule.volumeRef.gameObject);
+                        rule.volumeRef = null;
+                    }
+                }
+            }
+
             EditorGUILayout.Space(6);
 
             if (GUILayout.Button(
@@ -347,7 +446,7 @@ public class TerrainPrefabPainter : EditorWindow
 
             GUIUtility.ExitGUI();
         }
-        
+
         so.ApplyModifiedProperties();
     }
 
@@ -355,19 +454,26 @@ public class TerrainPrefabPainter : EditorWindow
     {
         EditorGUILayout.Space(20);
 
+        if (GUILayout.Button(
+                new GUIContent("Delete All Spawned Prefabs", "Deletes every prefab spawned by this painter")
+            ))
+        {
+            DeleteAllSpawnedPrefabs();
+        }
+
         using (new EditorGUILayout.HorizontalScope())
         {
             if (GUILayout.Button(
-                new GUIContent("Dry Run", "Simulates painting without modifying anything.")
-            ))
+                    new GUIContent("Dry Run", "Simulates painting without modifying anything.")
+                ))
             {
                 if (!ValidateTerrain()) return;
                 Run(false);
             }
 
             if (GUILayout.Button(
-                new GUIContent("Paint", "Applies detail painting and prefab placement.")
-            ))
+                    new GUIContent("Paint", "Applies detail painting and prefab placement.")
+                ))
             {
                 if (!ValidateTerrain()) return;
                 Run(true);
@@ -418,7 +524,6 @@ public class TerrainPrefabPainter : EditorWindow
     {
         SyncFoldoutArray();
         var td = terrain.terrainData;
-        var dps = td.detailPrototypes;
 
         int detailRes = td.detailResolution;
         int hmRes = td.heightmapResolution;
@@ -534,7 +639,10 @@ public class TerrainPrefabPainter : EditorWindow
             }
 
             if (passPaint && paintPrefabs)
+            {
+                RefreshCircleList();
                 PaintPrefabs(td, heights, alpha);
+            }
         }
         finally
         {
@@ -551,7 +659,7 @@ public class TerrainPrefabPainter : EditorWindow
     }
 
     #endregion
-    
+
     #region PrefabSpawning
 
     void PaintPrefabs(TerrainData td, float[,] heights, float[,,] alpha)
@@ -563,75 +671,182 @@ public class TerrainPrefabPainter : EditorWindow
         int amRes = td.alphamapResolution;
         int res = td.detailResolution;
 
+        // Detail buffer used for grass clearing
+        int[,] detailBuffer = td.GetDetailLayer(0, 0, res, res, detailIndex);
+
         Vector3 size = td.size;
         Vector3 origin = terrain.transform.position;
 
         var rand = new System.Random(seed);
 
-        for (int y = 0; y < res; y++)
+        // Delete once if any rule wants to wipe old prefabs
+        bool shouldDelete = false;
+        for (int i = 0; i < prefabRules.Length; i++)
         {
-            for (int x = 0; x < res; x++)
+            if (prefabRules[i].deleteBeforeSpawn)
             {
-                float nx = x / (float)(res - 1);
-                float ny = y / (float)(res - 1);
+                shouldDelete = true;
+                break;
+            }
+        }
 
-                int hx = Clamp01Index(Mathf.RoundToInt(nx * (hmRes - 1)), hmRes);
-                int hy = Clamp01Index(Mathf.RoundToInt(ny * (hmRes - 1)), hmRes);
+        if (shouldDelete)
+            DeleteAllSpawnedPrefabs();
 
-                float worldHeight = heights[hy, hx] * size.y;
-                float slopeDeg = Vector3.Angle(td.GetInterpolatedNormal(nx, ny), Vector3.up);
+        // Helper to process one sample position
+        void ProcessSample(float nx, float ny, float wx, float wz)
+        {
+            int hx = Mathf.RoundToInt(nx * (hmRes - 1));
+            int hy = Mathf.RoundToInt(ny * (hmRes - 1));
+            hx = Clamp01Index(hx, hmRes);
+            hy = Clamp01Index(hy, hmRes);
 
-                for (int i = 0; i < prefabRules.Length; i++)
+            float worldHeight = heights[hy, hx] * size.y;
+            float slopeDeg = Vector3.Angle(td.GetInterpolatedNormal(nx, ny), Vector3.up);
+
+            for (int i = 0; i < prefabRules.Length; i++)
+            {
+                var rule = prefabRules[i];
+                if (rule.prefab == null) continue;
+
+                // Per-rule volume area (box)
+                if (rule.useVolumeArea)
                 {
-                    var rule = prefabRules[i];
-                    if (rule.prefab == null) continue;
-
-                    if (worldHeight < rule.minHeight || worldHeight > rule.maxHeight) continue;
-                    if (slopeDeg > rule.maxSlope) continue;
-
-                    if (rule.splatIndex >= 0 && alpha != null)
+                    // If the user forgot to create a volume, just ignore volume filtering
+                    if (rule.volumeRef != null && rule.volumeRef.col != null)
                     {
-                        int ax = Mathf.FloorToInt(nx * (amRes - 1));
-                        int ay = Mathf.FloorToInt(ny * (amRes - 1));
-                        ay = Mathf.Clamp(ay, 0, alpha.GetLength(0) - 1);
-                        ax = Mathf.Clamp(ax, 0, alpha.GetLength(1) - 1);
-
-                        float splatWeight = alpha[ay, ax, Mathf.Clamp(rule.splatIndex, 0, alpha.GetLength(2) - 1)];
-                        if (splatWeight < 0.2f) continue;
+                        Vector3 volumeCheck = new Vector3(wx, worldHeight, wz);
+                        if (!rule.volumeRef.col.bounds.Contains(volumeCheck))
+                            return;
                     }
+                }
 
-                    float noiseValue = Mathf.PerlinNoise(
-                        (x + rand.Next(-9999, 9999)) * Mathf.Max(rule.noiseScale, 1e-6f),
-                        (y + rand.Next(-9999, 9999)) * Mathf.Max(rule.noiseScale, 1e-6f)
-                    );
+                // Height and slope per rule
+                if (worldHeight < rule.minHeight || worldHeight > rule.maxHeight) continue;
+                if (slopeDeg > rule.maxSlope) continue;
 
-                    if (noiseValue < rule.noiseThreshold) continue;
-                    if (rand.NextDouble() > rule.density) continue;
+                // Optional splat filter per rule
+                if (rule.splatIndex >= 0 && alpha != null)
+                {
+                    int ax = Mathf.FloorToInt(nx * (amRes - 1));
+                    int ay = Mathf.FloorToInt(ny * (amRes - 1));
+                    ay = Mathf.Clamp(ay, 0, alpha.GetLength(0) - 1);
+                    ax = Mathf.Clamp(ax, 0, alpha.GetLength(1) - 1);
 
-                    Vector3 pos = new Vector3(
-                        origin.x + nx * size.x,
-                        worldHeight,
-                        origin.z + ny * size.z
-                    );
+                    float splatWeight = alpha[ay, ax, Mathf.Clamp(rule.splatIndex, 0, alpha.GetLength(2) - 1)];
+                    if (splatWeight < 0.2f) continue;
+                }
 
-                    GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(rule.prefab);
-                    GameObject instance = prefabSource
-                        ? (GameObject)PrefabUtility.InstantiatePrefab(prefabSource)
-                        : Instantiate(rule.prefab);
+                // Noise per rule
+                float noiseValue = Mathf.PerlinNoise(
+                    (float)(rand.NextDouble() * 99999f) * Mathf.Max(rule.noiseScale, 1e-6f),
+                    (float)(rand.NextDouble() * 99999f) * Mathf.Max(rule.noiseScale, 1e-6f)
+                );
+                if (noiseValue < rule.noiseThreshold) continue;
 
-                    instance.transform.position = pos;
+                // Density
+                if (rand.NextDouble() > rule.density) continue;
 
-                    float t = (float)rand.NextDouble();
-                    float s = Mathf.Lerp(rule.randomScale.x, rule.randomScale.y, t);
-                    instance.transform.localScale = Vector3.one * s;
+                // Spawn prefab
+                Vector3 pos = new Vector3(wx, worldHeight, wz);
 
-                    instance.transform.rotation = Quaternion.Euler(0, rand.Next(0, 360), 0);
+                GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(rule.prefab);
+                GameObject instance = prefabSource
+                    ? (GameObject)PrefabUtility.InstantiatePrefab(prefabSource)
+                    : Object.Instantiate(rule.prefab);
+                
+                // Scale
+                float t = (float)rand.NextDouble();
+                float sVal = Mathf.Lerp(rule.randomScale.x, rule.randomScale.y, t);
+                instance.transform.localScale = Vector3.one * sVal;
 
-                    if (!instance.GetComponent<TileProp>())
-                        instance.AddComponent<TileProp>();
+                // Rotation will be set later if we align to slope
+                float randomY = rand.Next(0, 360);
+
+                // Place roughly at heightmap pos
+                instance.transform.position = pos;
+
+                // Snap to actual ground
+                RaycastHit hit;
+                Vector3 rayStart = pos + Vector3.up * 200f;
+                if (Physics.Raycast(rayStart, Vector3.down, out hit, 500f, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    instance.transform.position = hit.point;
+
+                    // Align to ground slope
+                    Vector3 normal = hit.normal;
+                    Quaternion slopeRot = Quaternion.FromToRotation(Vector3.up, normal);
+                    instance.transform.rotation = slopeRot * Quaternion.Euler(0, randomY, 0);
+                }
+                else
+                {
+                    // Fallback: flat rotation
+                    instance.transform.rotation = Quaternion.Euler(0, randomY, 0);
+                }
+                
+                instance.transform.SetParent(GetRuleRoot(rule), true);
+
+                // Grass clear
+                if (rule.clearRadius > 0f)
+                    ClearGrassAround(detailBuffer, td, instance.transform.position, rule.clearRadius);
+
+                if (!instance.GetComponent<TileProp>())
+                    instance.AddComponent<TileProp>();
+            }
+        }
+
+        // Auto-detect all circles in the scene
+        RefreshCircleList();
+
+        bool circlesAvailable = useGlobalCircles && globalCircles != null && globalCircles.Count > 0;
+
+        if (circlesAvailable)
+        {
+            // Random sampling inside 2D circles
+            int samples = 5000; // tweak for density
+
+            for (int s = 0; s < samples; s++)
+            {
+                var c = globalCircles[rand.Next(globalCircles.Count)];
+                if (!c) continue;
+
+                float angle = (float)(rand.NextDouble() * Mathf.PI * 2f);
+                float radius = c.radius * Mathf.Sqrt((float)rand.NextDouble());
+
+                float wx = c.transform.position.x + Mathf.Cos(angle) * radius;
+                float wz = c.transform.position.z + Mathf.Sin(angle) * radius;
+
+                float nx = Mathf.InverseLerp(origin.x, origin.x + size.x, wx);
+                float ny = Mathf.InverseLerp(origin.z, origin.z + size.z, wz);
+
+                // skip samples outside terrain bounds
+                if (nx < 0 || nx > 1 || ny < 0 || ny > 1) continue;
+
+                ProcessSample(nx, ny, wx, wz);
+            }
+        }
+        else
+        {
+            // Fallback grid mode when no circles exist
+            int detailRes = res;
+
+            for (int y = 0; y < detailRes; y++)
+            {
+                for (int x = 0; x < detailRes; x++)
+                {
+                    float nx = x / (float)(detailRes - 1);
+                    float ny = y / (float)(detailRes - 1);
+
+                    float wx = origin.x + nx * size.x;
+                    float wz = origin.z + ny * size.z;
+
+                    ProcessSample(nx, ny, wx, wz);
                 }
             }
         }
+
+        // Apply all grass clearing at once
+        td.SetDetailLayer(0, 0, detailIndex, detailBuffer);
     }
 
     #endregion
@@ -703,8 +918,54 @@ public class TerrainPrefabPainter : EditorWindow
         return result;
     }
 
-    #endregion
+    void ClearGrassAround(int[,] buffer, TerrainData td, Vector3 worldPos, float radius)
+    {
+        int detailRes = td.detailResolution;
+        Vector3 terrainPos = terrain.transform.position;
+        Vector3 size = td.size;
+
+        float nx = Mathf.InverseLerp(terrainPos.x, terrainPos.x + size.x, worldPos.x);
+        float nz = Mathf.InverseLerp(terrainPos.z, terrainPos.z + size.z, worldPos.z);
+
+        int cx = Mathf.RoundToInt(nx * (detailRes - 1));
+        int cz = Mathf.RoundToInt(nz * (detailRes - 1));
+
+        float cellsPerMeter = detailRes / size.x;
+        int radCells = Mathf.RoundToInt(radius * cellsPerMeter);
+
+        for (int z = -radCells; z <= radCells; z++)
+        {
+            for (int x = -radCells; x <= radCells; x++)
+            {
+                int sx = cx + x;
+                int sz = cz + z;
+
+                if (sx < 0 || sx >= detailRes) continue;
+                if (sz < 0 || sz >= detailRes) continue;
+
+                float dist = Mathf.Sqrt(x * x + z * z);
+                if (dist <= radCells)
+                    buffer[sz, sx] = 0;
+            }
+        }
+    }
     
+    void RefreshCircleList()
+    {
+        globalCircles.Clear();
+
+        // Find all circles in the scene (even if disabled)
+        var found = FindObjectsByType<SpawnCircleVolume>(FindObjectsSortMode.None);
+
+        foreach (var c in found)
+        {
+            if (!globalCircles.Contains(c))
+                globalCircles.Add(c);
+        }
+    }
+
+    #endregion
+
     #region Debug
 
     void LogDryRun(TerrainData td, int affectedCells)
@@ -725,7 +986,6 @@ public class TerrainPrefabPainter : EditorWindow
         float totalArea = size.x * size.z;
         float percent = totalArea > 0 ? (affectedArea / totalArea) * 100f : 0f;
 
-        // Prefab summary
         int prefabCount = 0;
         System.Text.StringBuilder prefabList = new System.Text.StringBuilder();
 
@@ -756,8 +1016,238 @@ public class TerrainPrefabPainter : EditorWindow
         );
     }
 
-    #endregion
+    void DeleteAllSpawnedPrefabs()
+    {
+        var root = GetPrefabRoot();
+        int count = root.childCount;
 
+        for (int i = count - 1; i >= 0; i--)
+            DestroyImmediate(root.GetChild(i).gameObject);
+
+        Debug.Log($"Deleted {count} spawned prefabs.");
+    }
+
+
+    ForestAreaVolume CreateForestVolumeGizmo(string ruleName)
+    {
+        GameObject go = new GameObject($"Volume_{ruleName}");
+        var col = go.AddComponent<BoxCollider>();
+        col.size = new Vector3(50, 500, 50);
+        col.isTrigger = true;
+
+        var vol = go.AddComponent<ForestAreaVolume>();
+        vol.col = col;
+
+        SceneView view = SceneView.lastActiveSceneView;
+        if (view != null && view.camera != null)
+        {
+            Ray ray = new Ray(view.camera.transform.position, view.camera.transform.forward);
+            RaycastHit hit;
+
+            if (Physics.Raycast(ray, out hit, 5000f))
+            {
+                go.transform.position = hit.point;
+            }
+            else
+            {
+                go.transform.position = view.camera.transform.position + view.camera.transform.forward * 20f;
+            }
+        }
+        else
+        {
+            go.transform.position = terrain
+                ? terrain.transform.position + new Vector3(0, 2, 0)
+                : Vector3.zero;
+        }
+
+        Selection.activeGameObject = go;
+        return vol;
+    }
+
+    SpawnCircleVolume CreateGlobalCircleVolume()
+    {
+        GameObject go = new GameObject("SpawnCircle");
+        
+        var vol = go.AddComponent<SpawnCircleVolume>();
+        vol.radius = 25f;
+
+        SceneView view = SceneView.lastActiveSceneView;
+        if (view != null && view.camera != null && terrain != null)
+        {
+            Ray ray = new Ray(view.camera.transform.position, view.camera.transform.forward);
+            RaycastHit hit;
+
+            if (Physics.Raycast(ray, out hit, 5000f))
+            {
+                go.transform.position = hit.point;
+            }
+            else
+            {
+                go.transform.position = view.camera.transform.position + view.camera.transform.forward * 20f;
+            }
+        }
+        else
+        {
+            go.transform.position = terrain ? terrain.transform.position + new Vector3(0, 2, 0) : Vector3.zero;
+        }
+
+        Selection.activeGameObject = go;
+
+        return vol;
+    }
+
+    public void StartPlacingVolume(PrefabPaintRule rule)
+    {
+        placingVolume = true;
+        volumeRuleTarget = rule;
+
+        preview = new VolumeAreaPreview();
+        preview.SetSize(new Vector3(50, 500, 50));
+    }
+
+    public void ConfirmVolumePlacement(Vector3 pos)
+    {
+        GameObject go = new GameObject($"Volume_{volumeRuleTarget.name}");
+        var col = go.AddComponent<BoxCollider>();
+        col.size = preview.col.size;
+        col.isTrigger = true;
+
+        go.transform.position = pos;
+
+        var vol = go.AddComponent<ForestAreaVolume>();
+        vol.col = col;
+
+        volumeRuleTarget.volumeRef = vol;
+
+        Selection.activeGameObject = go;
+    }
+
+    public void StopPlacingVolume()
+    {
+        placingVolume = false;
+        if (preview != null)
+        {
+            preview.Destroy();
+            preview = null;
+        }
+    }
+    
+    Transform GetRuleRoot(PrefabPaintRule rule)
+    {
+        Transform baseRoot = GetPrefabRoot();
+
+        string folderName = string.IsNullOrWhiteSpace(rule.name)
+            ? (rule.prefab != null ? rule.prefab.name : "UnnamedRule")
+            : rule.name;
+
+        // Try find existing child
+        Transform found = baseRoot.Find(folderName);
+        if (found != null)
+            return found;
+
+        // Create new folder
+        GameObject newFolder = new GameObject(folderName);
+        newFolder.transform.SetParent(baseRoot);
+        return newFolder.transform;
+    }
+
+    Transform GetPrefabRoot()
+    {
+        if (prefabRoot == null)
+        {
+            // Try find an existing root
+            var existing = GameObject.Find("TerrainPropRoot");
+            if (existing != null)
+            {
+                prefabRoot = existing.transform;
+            }
+            else
+            {
+                // Create new root object
+                GameObject root = new GameObject("TerrainPropRoot");
+                prefabRoot = root.transform;
+            }
+        }
+
+        return prefabRoot;
+    }
+    
+    #endregion
 }
 
 public class TileProp : MonoBehaviour {}
+
+public class ForestAreaVolume : MonoBehaviour
+{
+    public BoxCollider col;
+    void OnValidate() { col = GetComponent<BoxCollider>(); }
+}
+
+public class VolumeAreaPreview
+{
+    public GameObject preview;
+    public BoxCollider col;
+
+    public VolumeAreaPreview()
+    {
+        preview = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        preview.name = "VolumePreview";
+        preview.hideFlags = HideFlags.HideAndDontSave;
+
+        col = preview.GetComponent<BoxCollider>();
+        col.isTrigger = true;
+
+        var renderer = preview.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial = new Material(Shader.Find("Hidden/Internal-Colored"))
+        {
+            color = new Color(0, 1, 0, 0.25f)
+        };
+    }
+
+    public void SetPosition(Vector3 pos)
+    {
+        preview.transform.position = pos;
+    }
+
+    public void SetSize(Vector3 size)
+    {
+        preview.transform.localScale = size;
+        col.size = size;
+    }
+
+    public void Destroy()
+    {
+        if (preview) GameObject.DestroyImmediate(preview);
+    }
+}
+
+public class SpawnCircleVolume : MonoBehaviour
+{
+    public float radius = 25f;
+
+    public bool Contains(Vector3 worldPos)
+    {
+        Vector2 p = new Vector2(worldPos.x, worldPos.z);
+        Vector2 c = new Vector2(transform.position.x, transform.position.z);
+        return (p - c).sqrMagnitude <= radius * radius;
+    }
+
+#if UNITY_EDITOR
+    void OnDrawGizmos()
+    {
+        Gizmos.color = new Color(0, 1, 0, 0.5f);
+        UnityEditor.Handles.DrawSolidDisc(
+            new Vector3(transform.position.x, transform.position.y, transform.position.z),
+            Vector3.up,
+            radius
+        );
+
+        Gizmos.color = Color.green;
+        UnityEditor.Handles.DrawWireDisc(
+            new Vector3(transform.position.x, transform.position.y, transform.position.z),
+            Vector3.up,
+            radius
+        );
+    }
+#endif
+}
