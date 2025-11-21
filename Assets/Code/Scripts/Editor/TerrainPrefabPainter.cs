@@ -53,6 +53,7 @@ public class TerrainPrefabPainter : EditorWindow
     {
         public string name = "Prefab Rule";
         public GameObject prefab;
+        public PrefabVariant[] variants;
         public float density = 0.15f;
         public float minHeight = 0f;
         public float maxHeight = 1000f;
@@ -65,6 +66,14 @@ public class TerrainPrefabPainter : EditorWindow
         public bool deleteBeforeSpawn = false;
         public bool useVolumeArea = false;
         public ForestAreaVolume volumeRef = null;
+    }
+    
+    [System.Serializable]
+    public class PrefabVariant
+    {
+        public GameObject prefab;
+        public float weight = 1.0f;
+        public Vector2 randomScale = new Vector2(0.9f, 1.2f);
     }
 
     #endregion
@@ -309,7 +318,89 @@ public class TerrainPrefabPainter : EditorWindow
             ArrayUtility.Add(ref prefabRules, new PrefabPaintRule());
             ArrayUtility.Add(ref ruleFoldouts, true);
         }
+        
+        EditorGUILayout.Space(10);
 
+        #region Presets
+        
+        EditorGUILayout.LabelField("Quick Presets", EditorStyles.boldLabel);
+
+        // Forest presets
+        EditorGUILayout.LabelField("Forests", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Sparse")) CreatePresetRule("Sparse Forest", 0.10f, 0.55f, new Vector2(0.9f, 1.1f), 32f, 1.2f);
+            if (GUILayout.Button("Normal")) CreatePresetRule("Normal Forest", 0.22f, 0.45f, new Vector2(0.85f, 1.2f), 32f, 1.4f);
+            if (GUILayout.Button("Dense")) CreatePresetRule("Dense Forest", 0.38f, 0.35f, new Vector2(0.8f, 1.25f), 40f, 1.6f);
+            if (GUILayout.Button("Overgrown")) CreatePresetRule("Overgrown Forest", 0.60f, 0.25f, new Vector2(0.75f, 1.3f), 45f, 1.8f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Rock fields
+        EditorGUILayout.LabelField("Rocks & Boulders", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Scattered Rocks")) CreatePresetRule("Scattered Rocks", 0.08f, 0.60f, new Vector2(0.6f, 1.1f), 50f, 0.5f);
+            if (GUILayout.Button("Rock Cluster")) CreatePresetRule("Rock Cluster", 0.20f, 0.40f, new Vector2(0.8f, 1.3f), 55f, 0.8f);
+            if (GUILayout.Button("Boulder Field")) CreatePresetRule("Boulder Field", 0.35f, 0.30f, new Vector2(1.0f, 1.6f), 60f, 1.2f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Bush areas
+        EditorGUILayout.LabelField("Bushes & Underbrush", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Garden Bushes")) CreatePresetRule("Garden Bushes", 0.12f, 0.50f, new Vector2(0.7f, 1.0f), 25f, 0.5f);
+            if (GUILayout.Button("Wild Bushes")) CreatePresetRule("Wild Bushes", 0.25f, 0.40f, new Vector2(0.8f, 1.2f), 35f, 0.6f);
+            if (GUILayout.Button("Thick Underbrush")) CreatePresetRule("Thick Underbrush", 0.45f, 0.30f, new Vector2(0.9f, 1.3f), 40f, 0.8f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Flowers
+        EditorGUILayout.LabelField("Flowers & Meadow", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Sparse Flowers")) CreatePresetRule("Sparse Flowers", 0.05f, 0.65f, new Vector2(0.7f, 1.1f), 25f, 0.3f);
+            if (GUILayout.Button("Meadow")) CreatePresetRule("Flower Meadow", 0.18f, 0.45f, new Vector2(0.8f, 1.2f), 30f, 0.4f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Dead areas
+        EditorGUILayout.LabelField("Dead / Spooky Biomes", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Sparse Dead Trees")) CreatePresetRule("Dead Trees", 0.10f, 0.60f, new Vector2(0.9f, 1.1f), 35f, 1.2f);
+            if (GUILayout.Button("Witchy Dense Dead")) CreatePresetRule("Witch Forest", 0.30f, 0.40f, new Vector2(0.8f, 1.2f), 50f, 1.5f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Snow biomes
+        EditorGUILayout.LabelField("Snow Biomes", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Snow Sparse")) CreatePresetRule("Snow Sparse Trees", 0.08f, 0.55f, new Vector2(0.9f, 1.2f), 30f, 1.4f);
+            if (GUILayout.Button("Snow Forest")) CreatePresetRule("Snow Forest", 0.25f, 0.40f, new Vector2(0.8f, 1.3f), 35f, 1.6f);
+        }
+
+        EditorGUILayout.Space(6);
+
+        // Desert / dunes
+        EditorGUILayout.LabelField("Desert & Dry Areas", EditorStyles.boldLabel);
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Desert Sparse")) CreatePresetRule("Desert Sparse Rocks", 0.04f, 0.60f, new Vector2(0.7f, 1.1f), 50f, 0.4f);
+            if (GUILayout.Button("Dune Clutter")) CreatePresetRule("Dune Clutter", 0.12f, 0.45f, new Vector2(0.9f, 1.3f), 60f, 0.5f);
+        }
+
+        EditorGUILayout.Space(10);
+
+        #endregion
+        
         SyncFoldoutArray();
 
         SerializedObject so = new SerializedObject(this);
@@ -338,6 +429,48 @@ public class TerrainPrefabPainter : EditorWindow
                 typeof(GameObject),
                 false
             );
+            
+            EditorGUILayout.Space(6);
+            EditorGUILayout.LabelField("Prefab Variants", EditorStyles.boldLabel);
+
+            if (GUILayout.Button("Add Variant"))
+            {
+                ArrayUtility.Add(ref rule.variants, new PrefabVariant());
+            }
+
+            for (int v = 0; v < rule.variants.Length; v++)
+            {
+                var variant = rule.variants[v];
+
+                EditorGUILayout.BeginVertical("box");
+
+                variant.prefab = (GameObject)EditorGUILayout.ObjectField(
+                    "Prefab",
+                    variant.prefab,
+                    typeof(GameObject),
+                    false
+                );
+
+                variant.weight = EditorGUILayout.Slider(
+                    "Weight",
+                    variant.weight,
+                    0.01f,
+                    10f
+                );
+
+                variant.randomScale = EditorGUILayout.Vector2Field(
+                    "Scale",
+                    variant.randomScale
+                );
+
+                if (GUILayout.Button("Remove"))
+                {
+                    ArrayUtility.RemoveAt(ref rule.variants, v);
+                    break;
+                }
+
+                EditorGUILayout.EndVertical();
+            }
 
             rule.density = EditorGUILayout.Slider(
                 new GUIContent("Density", "Probability of spawning."),
@@ -424,6 +557,32 @@ public class TerrainPrefabPainter : EditorWindow
                         rule.volumeRef = null;
                     }
                 }
+            }
+            
+            if (terrain && terrain.terrainData)
+            {
+                TerrainData td = terrain.terrainData;
+                int detailRes = td.detailResolution;
+                float cellSize = td.size.x / detailRes;
+                float cellArea = cellSize * cellSize;
+            
+                // Approximate filter impact multipliers
+                float heightFactor = Mathf.Clamp01((rule.maxHeight - rule.minHeight) / td.size.y);
+                float slopeFactor = Mathf.Clamp01((rule.maxSlope / 90f));
+                float noiseFactor = 1f - rule.noiseThreshold;
+            
+                // Final probability a cell spawns something
+                float spawnChance = rule.density * heightFactor * slopeFactor * noiseFactor;
+                float prefabsPerM2 = spawnChance / cellArea;
+            
+                float terrainArea = td.size.x * td.size.z;
+                float estimatedTotal = prefabsPerM2 * terrainArea;
+            
+                EditorGUILayout.HelpBox(
+                    $"Estimated density: {prefabsPerM2:F3} prefabs/m²\n" +
+                    $"Estimated total: {estimatedTotal:F0} prefabs",
+                    MessageType.Info
+                );
             }
 
             EditorGUILayout.Space(6);
@@ -707,7 +866,10 @@ public class TerrainPrefabPainter : EditorWindow
             for (int i = 0; i < prefabRules.Length; i++)
             {
                 var rule = prefabRules[i];
-                if (rule.prefab == null) continue;
+
+                // if variants exist, ignore single prefab
+                bool hasVariants = rule.variants != null && rule.variants.Length > 0;
+                if (!hasVariants && rule.prefab == null) continue;
 
                 // Per-rule volume area (box)
                 if (rule.useVolumeArea)
@@ -1170,6 +1332,20 @@ public class TerrainPrefabPainter : EditorWindow
         }
 
         return prefabRoot;
+    }
+    
+    void CreatePresetRule(string name, float density, float noiseThreshold, Vector2 scale, float maxSlope, float clearRadius)
+    {
+        var r = new PrefabPaintRule();
+        r.name = name;
+        r.density = density;
+        r.noiseThreshold = noiseThreshold;
+        r.randomScale = scale;
+        r.maxSlope = maxSlope;
+        r.clearRadius = clearRadius;
+
+        ArrayUtility.Add(ref prefabRules, r);
+        ArrayUtility.Add(ref ruleFoldouts, true);
     }
     
     #endregion
