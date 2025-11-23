@@ -13,7 +13,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     [Header("Configuration")]
     public TileIndex index;
     [SerializeField] private Transform player;
-    [SerializeField] private float loadRadius = 500f;
+    [SerializeField] public float loadRadius = 500f;
     [SerializeField] private float edgeBuffer = 25f;
     public float scanInterval = 0.5f;
     public bool logActions = false;
