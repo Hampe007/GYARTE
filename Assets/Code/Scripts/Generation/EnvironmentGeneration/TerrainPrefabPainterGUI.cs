@@ -573,10 +573,16 @@ public partial class TerrainPrefabPainter
             rule.maxSlope
         );
 
-        rule.splatIndex = EditorGUILayout.IntField(
-            new GUIContent("Splat Index", "Optional splat layer filter."),
-            rule.splatIndex
+        // Terrain layer filter dropdown
+        int splatPopup = EditorGUILayout.Popup(
+            new GUIContent("Terrain Layer", "Only spawn on this terrain layer. Uses alphamap weight."),
+            rule.splatIndex + 1,
+            WithNoneFirst(splatLabels)
         );
+
+        // Convert popup back to -1 = None
+        rule.splatIndex = splatPopup - 1;
+
 
         rule.noiseScale = EditorGUILayout.FloatField(
             new GUIContent("Noise Scale", "Scale of noise for this rule."),

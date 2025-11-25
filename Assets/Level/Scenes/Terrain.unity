@@ -540,12 +540,9 @@ MonoBehaviour:
   targetFPS: -1
   targetTerrain: {fileID: 1228233516}
   propGroups: []
-  enableDirtLayer: 1
-  enableGrassLayer: 1
-  enableSnowLayer: 1
+  enableTerrainTextures: 1
   enableProps: 1
   togglePropsKey: 286
-  cycleTexturesKey: 287
 --- !u!4 &442848993
 Transform:
   m_ObjectHideFlags: 0

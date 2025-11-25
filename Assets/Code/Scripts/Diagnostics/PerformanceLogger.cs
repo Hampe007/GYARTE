@@ -62,18 +62,14 @@ public class PerformanceLogger : MonoBehaviour
     [SerializeField] private Terrain targetTerrain;
     [SerializeField] private GameObject[] propGroups;
 
-    // Texture layer toggles
-    [SerializeField] private bool enableDirtLayer = true;
-    [SerializeField] private bool enableGrassLayer = true;
-    [SerializeField] private bool enableSnowLayer = true;
-
+    [SerializeField] private bool enableTerrainTextures = true;
+    
     // Props toggle
     [Tooltip("Rocks, trees etc.")]
     [SerializeField] private bool enableProps = true;
     
     // Toggle keys
     [SerializeField] private KeyCode togglePropsKey = KeyCode.F5;
-    [SerializeField] private KeyCode cycleTexturesKey = KeyCode.F6;
 
     // Cache of original layers
     private TerrainLayer[] _originalLayers;
@@ -208,13 +204,6 @@ public class PerformanceLogger : MonoBehaviour
             LogScenarioStamp();
         }
 
-        if (cycleTexturesKey != KeyCode.None && Input.GetKeyDown(cycleTexturesKey))
-        {
-            CycleTextureLayerPreset();
-            ApplyTextureLayerToggles();
-            LogScenarioStamp();
-        }
-
         _t += Time.unscaledDeltaTime;
         if (_t < sampleIntervalSeconds) return;
         _t = 0f;
@@ -289,11 +278,9 @@ public class PerformanceLogger : MonoBehaviour
     }
 
     // Explicit setter you can call before starting a benchmark
-    public void SetTextureToggles(bool dirt, bool grass, bool snow)
+    public void SetTextureToggle(bool enable)
     {
-        enableDirtLayer = dirt;
-        enableGrassLayer = grass;
-        enableSnowLayer = snow;
+        enableTerrainTextures = enable;
         ApplyTextureLayerToggles();
     }
 
@@ -329,62 +316,25 @@ public class PerformanceLogger : MonoBehaviour
 
     private void ApplyTextureLayerToggles()
     {
-        if (targetTerrain == null || targetTerrain.terrainData == null) return;
+        if (targetTerrain == null || targetTerrain.terrainData == null)
+            return;
 
         CacheOriginalTerrainLayers();
-        if (!_layersCached || _originalLayers == null) return;
+        if (!_layersCached || _originalLayers == null)
+            return;
 
-        // Build a filtered list based on layer names; non-matched layers are excluded
-        var list = new System.Collections.Generic.List<TerrainLayer>();
-        for (int i = 0; i < _originalLayers.Length; i++)
+        if (enableTerrainTextures)
         {
-            var layer = _originalLayers[i];
-            if (layer == null) continue;
-            var name = layer.name ?? string.Empty;
-
-            bool isDirt = name.IndexOf("dirt", System.StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isGrass = name.IndexOf("grass", System.StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isSnow = name.IndexOf("snow", System.StringComparison.OrdinalIgnoreCase) >= 0;
-
-            if ((isDirt && enableDirtLayer) ||
-                (isGrass && enableGrassLayer) ||
-                (isSnow && enableSnowLayer))
-            {
-                list.Add(layer);
-            }
+            // Restore all original terrains
+            targetTerrain.terrainData.terrainLayers = (TerrainLayer[])_originalLayers.Clone();
+        }
+        else
+        {
+            // Disable all layers
+            targetTerrain.terrainData.terrainLayers = new TerrainLayer[0];
         }
 
-        // If nothing matched, assign an empty array to simulate "no painted layers"
-        targetTerrain.terrainData.terrainLayers = list.ToArray();
-
-        // Force a refresh so the change is visible immediately
         targetTerrain.Flush();
-    }
-
-    // Simple preset cycler for testing via hotkey
-    private void CycleTextureLayerPreset()
-    {
-        if (enableDirtLayer && enableGrassLayer && enableSnowLayer)
-        {
-            enableDirtLayer = true;  enableGrassLayer = false; enableSnowLayer = false;
-            return;
-        }
-        if (enableDirtLayer && !enableGrassLayer && !enableSnowLayer)
-        {
-            enableDirtLayer = false; enableGrassLayer = true;  enableSnowLayer = false;
-            return;
-        }
-        if (!enableDirtLayer && enableGrassLayer && !enableSnowLayer)
-        {
-            enableDirtLayer = false; enableGrassLayer = false; enableSnowLayer = true;
-            return;
-        }
-        if (!enableDirtLayer && !enableGrassLayer && enableSnowLayer)
-        {
-            enableDirtLayer = false; enableGrassLayer = false; enableSnowLayer = false;
-            return;
-        }
-        enableDirtLayer = true; enableGrassLayer = true; enableSnowLayer = true;
     }
 
     // Emits a single compact tag so your CSV can group results by scenario

@@ -143,13 +143,30 @@ public partial class TerrainPrefabPainter : EditorWindow
         int[,] output = new int[detailRes, detailRes];
         var heights = td.GetHeights(0, 0, hmRes, hmRes);
 
-        float[,,] alpha = null;
+        float[,] alphaLayer = null;
         bool useAlpha = splatIndex >= 0 && splatIndex < td.alphamapLayers;
 
         if (useAlpha)
         {
-            try { alpha = td.GetAlphamaps(0, 0, amRes, amRes); }
-            catch { useAlpha = false; }
+            try
+            {
+                var alpha3D = td.GetAlphamaps(0, 0, amRes, amRes);
+                int safe = Mathf.Clamp(splatIndex, 0, td.alphamapLayers - 1);
+
+                alphaLayer = new float[amRes, amRes];
+                for (int y2 = 0; y2 < amRes; y2++)
+                {
+                    for (int x2 = 0; x2 < amRes; x2++)
+                    {
+                        alphaLayer[y2, x2] = alpha3D[y2, x2, safe];
+                    }
+                }
+            }
+            catch
+            {
+                useAlpha = false;
+                alphaLayer = null;
+            }
         }
 
         var rand = new System.Random(seed);
@@ -196,19 +213,25 @@ public partial class TerrainPrefabPainter : EditorWindow
                         continue;
                     }
 
-                    if (useAlpha && alpha != null)
+                    if (useAlpha && alphaLayer != null)
                     {
-                        int ax = Mathf.FloorToInt(nx * (amRes - 1));
-                        int ay = Mathf.FloorToInt(ny * (amRes - 1));
-                        ay = Mathf.Clamp(ay, 0, alpha.GetLength(0) - 1);
-                        ax = Mathf.Clamp(ax, 0, alpha.GetLength(1) - 1);
-                        int safe = Mathf.Clamp(splatIndex, 0, alpha.GetLength(2) - 1);
-
-                        float w = alpha[ay, ax, safe];
-                        if (w < Safe01(splatMinCache))
+                        // If no terrain layer has been selected, skip filtering entirely
+                        if (splatIndex >= 0)
                         {
-                            output[y, x] = addMode ? current[y, x] : 0;
-                            continue;
+                            int ax = Mathf.FloorToInt(nx * (amRes - 1));
+                            int ay = Mathf.FloorToInt(ny * (amRes - 1));
+
+                            ay = Mathf.Clamp(ay, 0, alphaLayer.GetLength(0) - 1);
+                            ax = Mathf.Clamp(ax, 0, alphaLayer.GetLength(1) - 1);
+
+                            float w = alphaLayer[ay, ax];
+
+                            // If the splat weight is too low, bail out of placement for this cell
+                            if (w < Safe01(splatMinCache))
+                            {
+                                output[y, x] = addMode ? current[y, x] : 0;
+                                continue;
+                            }
                         }
                     }
 
@@ -246,7 +269,7 @@ public partial class TerrainPrefabPainter : EditorWindow
             if (passPaint && paintPrefabs)
             {
                 RefreshCircleList();
-                PaintPrefabs(td, heights, alpha);
+                PaintPrefabs(td, heights, alphaLayer);
             }
         }
         finally
@@ -268,7 +291,7 @@ public partial class TerrainPrefabPainter : EditorWindow
     #region PrefabSpawning
 
     // Spawns prefabs based on all rules
-    void PaintPrefabs(TerrainData td, float[,] heights, float[,,] alpha)
+    void PaintPrefabs(TerrainData td, float[,] heights, float[,] alphaLayer)
     {
         if (prefabRules == null || prefabRules.Length == 0) return;
         if (!terrain) return;
@@ -334,14 +357,16 @@ public partial class TerrainPrefabPainter : EditorWindow
                 if (slopeDeg > rule.maxSlope) continue;
 
                 // Optional splat filter per rule
-                if (rule.splatIndex >= 0 && alpha != null)
+                if (rule.splatIndex >= 0 && alphaLayer != null)
                 {
                     int ax = Mathf.FloorToInt(nx * (amRes - 1));
                     int ay = Mathf.FloorToInt(ny * (amRes - 1));
-                    ay = Mathf.Clamp(ay, 0, alpha.GetLength(0) - 1);
-                    ax = Mathf.Clamp(ax, 0, alpha.GetLength(1) - 1);
+                    ay = Mathf.Clamp(ay, 0, alphaLayer.GetLength(0) - 1);
+                    ax = Mathf.Clamp(ax, 0, alphaLayer.GetLength(1) - 1);
 
-                    float splatWeight = alpha[ay, ax, Mathf.Clamp(rule.splatIndex, 0, alpha.GetLength(2) - 1)];
+                    float splatWeight = alphaLayer[ay, ax];
+                    if (splatWeight < 0.2f) continue;
+                    
                     if (splatWeight < 0.2f) continue;
                 }
 
@@ -544,8 +569,8 @@ public partial class TerrainPrefabPainter : EditorWindow
                 splatLabels[i] = string.IsNullOrEmpty(tls[i].name) ? $"Layer {i}" : tls[i].name;
         }
 
-        if (detailIndex >= td.detailPrototypes.Length) detailIndex = 0;
-        if (splatIndex >= td.alphamapLayers) splatIndex = -1;
+        detailIndex = Mathf.Clamp(detailIndex, 0, Mathf.Max(0, td.detailPrototypes.Length - 1));
+        splatIndex = Mathf.Clamp(splatIndex, -1, td.alphamapLayers - 1);
     }
 
     static string BuildDetailLabel(DetailPrototype dp, int i)

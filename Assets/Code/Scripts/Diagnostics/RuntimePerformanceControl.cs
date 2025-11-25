@@ -81,11 +81,8 @@ public class RuntimePerformanceControl : MonoBehaviour
     {
         if (perfLogger != null)
         {
-            perfLogger.SetTextureToggles(
-                terrainTexturesEnabled,
-                terrainTexturesEnabled,
-                terrainTexturesEnabled
-            );
+            perfLogger.SetTextureToggle(terrainTexturesEnabled);
+
         }
     }
     
@@ -99,7 +96,7 @@ public class RuntimePerformanceControl : MonoBehaviour
         if (GUI.Button(new Rect(25, 75, 200, 25), propsEnabled ? "Disable Props" : "Enable Props"))
             SetProps(!propsEnabled);
 
-        if (GUI.Button(new Rect(25, 105, 200, 25), terrainTexturesEnabled ? "Disable Textures" : "Enable Textures"))
+        if (GUI.Button(new Rect(25, 105, 200, 25), terrainTexturesEnabled ? "Textures: ON (click to disable)" : "Textures: OFF (click to enable)"))
             SetTerrainTextures(!terrainTexturesEnabled);
     }
 }
