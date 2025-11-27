@@ -20,6 +20,34 @@ public partial class TerrainPrefabPainter
         DrawExecuteButtons();
 
         EditorGUILayout.EndScrollView();
+        
+        EditorGUILayout.Space(40);
+        EditorGUILayout.HelpBox(
+            "!!! DANGER ZONE !!!\nThis will delete EVERY session and ALL spawned props.",
+            MessageType.Error
+        );
+
+        GUI.backgroundColor = Color.red;
+
+        if (GUILayout.Button(
+                new GUIContent("NUKE ALL PREFABS", "Deletes ALL sessions and ALL spawned props")
+            ))
+        {
+            bool confirm = EditorUtility.DisplayDialog(
+                "Confirm Full Nuke",
+                "You are about to delete EVERY session and ALL spawned prefabs.\n" +
+                "This cannot be undone.\n\n" +
+                "Do you really want to do this?",
+                "TACTICAL NUKE INCOMING!",
+                "Cancel"
+            );
+
+            if (confirm)
+                DeleteAllSessions();
+        }
+
+        GUI.backgroundColor = Color.white;
+
     }
 
     #endregion
@@ -246,7 +274,6 @@ public partial class TerrainPrefabPainter
                 continue;
             }
 
-            // FULL RULE UI
             EditorGUILayout.BeginVertical("box");
 
             rule.name = EditorGUILayout.TextField(
@@ -280,8 +307,8 @@ public partial class TerrainPrefabPainter
                 removeIndex = i;
             }
 
-            EditorGUILayout.EndVertical(); // inner
-            EditorGUILayout.EndVertical(); // outer
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.EndVertical();
             EditorGUILayout.Space(4);
         }
 
@@ -300,11 +327,12 @@ public partial class TerrainPrefabPainter
     {
         EditorGUILayout.Space(20);
 
+        // Safe delete last session button
         if (GUILayout.Button(
-                new GUIContent("Delete All Spawned Prefabs", "Deletes every prefab spawned by this painter")
+                new GUIContent("Delete Last Session", "Deletes only the newest paint session")
             ))
         {
-            DeleteAllSpawnedPrefabs();
+            DeleteLastSession();
         }
 
         using (new EditorGUILayout.HorizontalScope())
@@ -335,12 +363,12 @@ public partial class TerrainPrefabPainter
     {
         EditorGUILayout.Space(10);
         presetsFoldout = EditorGUILayout.Foldout(presetsFoldout, "Presets", true);
-
+        float presetButtonWidth = (EditorGUIUtility.currentViewWidth - 80f) / 2f;
         if (!presetsFoldout) return;
 
         EditorGUILayout.BeginVertical("box");
 
-        // FORESTS
+        /* FORESTS */
         presetForestsFoldout = EditorGUILayout.Foldout(presetForestsFoldout, "Forests", true);
         if (presetForestsFoldout)
         {
@@ -348,20 +376,40 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse"))
-                    CreatePresetRule("Sparse Forest", 0.10f, 0.55f, new Vector2(0.9f, 1.1f), 32f, 1.2f);
+                if (GUILayout.Button("Sparse", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Sparse Forest",
+                        0.12f, 0.55f,
+                        new Vector2(0.85f, 1.15f),
+                        32f, 1.2f,
+                        new Vector3(0.05f, 0.25f, 0.05f),
+                        0.015f, 0.15f);
 
-                if (GUILayout.Button("Normal"))
-                    CreatePresetRule("Normal Forest", 0.22f, 0.45f, new Vector2(0.85f, 1.2f), 32f, 1.4f);
+                if (GUILayout.Button("Normal", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Normal Forest",
+                        0.25f, 0.40f,
+                        new Vector2(0.85f, 1.25f),
+                        38f, 1.5f,
+                        new Vector3(0.08f, 0.30f, 0.08f),
+                        0.02f, 0.18f);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Dense"))
-                    CreatePresetRule("Dense Forest", 0.38f, 0.35f, new Vector2(0.8f, 1.25f), 40f, 1.6f);
+                if (GUILayout.Button("Dense", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Dense Forest",
+                        0.40f, 0.30f,
+                        new Vector2(0.80f, 1.30f),
+                        42f, 1.5f,
+                        new Vector3(0.10f, 0.35f, 0.10f),
+                        0.025f, 0.22f);
 
-                if (GUILayout.Button("Overgrown"))
-                    CreatePresetRule("Overgrown Forest", 0.60f, 0.25f, new Vector2(0.75f, 1.3f), 45f, 1.8f);
+                if (GUILayout.Button("Overgrown", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Overgrown Forest",
+                        0.55f, 0.25f,
+                        new Vector2(0.80f, 1.40f),
+                        45f, 1.6f,
+                        new Vector3(0.15f, 0.40f, 0.15f),
+                        0.03f, 0.28f);
             }
 
             EditorGUILayout.EndVertical();
@@ -369,7 +417,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // ROCKS
+        /* ROCKS */
         presetRocksFoldout = EditorGUILayout.Foldout(presetRocksFoldout, "Rocks & Boulders", true);
         if (presetRocksFoldout)
         {
@@ -377,17 +425,32 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Scattered"))
-                    CreatePresetRule("Scattered Rocks", 0.08f, 0.60f, new Vector2(0.6f, 1.1f), 50f, 0.5f);
+                if (GUILayout.Button("Scattered", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Scattered Rocks",
+                        0.08f, 0.60f,
+                        new Vector2(0.6f, 1.1f),
+                        50f, 0.5f,
+                        new Vector3(0.15f, 0.05f, 0.15f),
+                        0.01f, 0.08f);
 
-                if (GUILayout.Button("Cluster"))
-                    CreatePresetRule("Rock Cluster", 0.20f, 0.40f, new Vector2(0.8f, 1.3f), 55f, 0.8f);
+                if (GUILayout.Button("Cluster", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Rock Cluster",
+                        0.20f, 0.40f,
+                        new Vector2(0.8f, 1.3f),
+                        55f, 0.8f,
+                        new Vector3(0.18f, 0.08f, 0.18f),
+                        0.012f, 0.10f);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Boulder Field"))
-                    CreatePresetRule("Boulder Field", 0.35f, 0.30f, new Vector2(1.0f, 1.6f), 60f, 1.2f);
+                if (GUILayout.Button("Boulder Field", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Boulder Field",
+                        0.35f, 0.30f,
+                        new Vector2(1.0f, 1.6f),
+                        60f, 1.2f,
+                        new Vector3(0.20f, 0.10f, 0.20f),
+                        0.01f, 0.12f);
             }
 
             EditorGUILayout.EndVertical();
@@ -395,7 +458,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // BUSHES
+        /* BUSHES */
         presetBushesFoldout = EditorGUILayout.Foldout(presetBushesFoldout, "Bushes & Underbrush", true);
         if (presetBushesFoldout)
         {
@@ -403,17 +466,32 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Garden"))
-                    CreatePresetRule("Garden Bushes", 0.12f, 0.50f, new Vector2(0.7f, 1.0f), 25f, 0.5f);
+                if (GUILayout.Button("Garden", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Garden Bushes",
+                        0.12f, 0.50f,
+                        new Vector2(0.7f, 1.0f),
+                        25f, 0.5f,
+                        new Vector3(0.08f, 0.12f, 0.08f),
+                        0.015f, 0.10f);
 
-                if (GUILayout.Button("Wild"))
-                    CreatePresetRule("Wild Bushes", 0.25f, 0.40f, new Vector2(0.8f, 1.2f), 35f, 0.6f);
+                if (GUILayout.Button("Wild", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Wild Bushes",
+                        0.25f, 0.40f,
+                        new Vector2(0.8f, 1.2f),
+                        35f, 0.6f,
+                        new Vector3(0.12f, 0.20f, 0.12f),
+                        0.02f, 0.14f);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Underbrush"))
-                    CreatePresetRule("Thick Underbrush", 0.45f, 0.30f, new Vector2(0.9f, 1.3f), 40f, 0.8f);
+                if (GUILayout.Button("Underbrush", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Thick Underbrush",
+                        0.45f, 0.30f,
+                        new Vector2(0.9f, 1.3f),
+                        40f, 0.8f,
+                        new Vector3(0.15f, 0.25f, 0.15f),
+                        0.025f, 0.18f);
             }
 
             EditorGUILayout.EndVertical();
@@ -421,7 +499,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // FLOWERS
+        /* FLOWERS */
         presetFlowersFoldout = EditorGUILayout.Foldout(presetFlowersFoldout, "Flowers & Meadow", true);
         if (presetFlowersFoldout)
         {
@@ -430,10 +508,20 @@ public partial class TerrainPrefabPainter
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Sparse Flowers"))
-                    CreatePresetRule("Sparse Flowers", 0.05f, 0.65f, new Vector2(0.7f, 1.1f), 25f, 0.3f);
+                    CreatePresetRule("Sparse Flowers",
+                        0.05f, 0.65f,
+                        new Vector2(0.7f, 1.1f),
+                        25f, 0.3f,
+                        new Vector3(0.05f, 0.10f, 0.05f),
+                        0.015f, 0.12f);
 
                 if (GUILayout.Button("Meadow"))
-                    CreatePresetRule("Flower Meadow", 0.18f, 0.45f, new Vector2(0.8f, 1.2f), 30f, 0.4f);
+                    CreatePresetRule("Flower Meadow",
+                        0.18f, 0.45f,
+                        new Vector2(0.8f, 1.2f),
+                        30f, 0.4f,
+                        new Vector3(0.08f, 0.15f, 0.08f),
+                        0.02f, 0.14f);
             }
 
             EditorGUILayout.EndVertical();
@@ -441,7 +529,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // DEAD / SPOOKY
+        /* DEAD / SPOOKY */
         presetDeadFoldout = EditorGUILayout.Foldout(presetDeadFoldout, "Dead / Spooky", true);
         if (presetDeadFoldout)
         {
@@ -450,10 +538,20 @@ public partial class TerrainPrefabPainter
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Sparse Dead"))
-                    CreatePresetRule("Dead Trees", 0.10f, 0.60f, new Vector2(0.9f, 1.1f), 35f, 1.2f);
+                    CreatePresetRule("Dead Trees",
+                        0.10f, 0.60f,
+                        new Vector2(0.9f, 1.1f),
+                        35f, 1.2f,
+                        new Vector3(0.05f, 0.20f, 0.05f),
+                        0.012f, 0.10f);
 
                 if (GUILayout.Button("Witch Forest"))
-                    CreatePresetRule("Witch Forest", 0.30f, 0.40f, new Vector2(0.8f, 1.2f), 50f, 1.5f);
+                    CreatePresetRule("Witch Forest",
+                        0.30f, 0.40f,
+                        new Vector2(0.8f, 1.2f),
+                        50f, 1.5f,
+                        new Vector3(0.12f, 0.35f, 0.12f),
+                        0.02f, 0.20f);
             }
 
             EditorGUILayout.EndVertical();
@@ -461,7 +559,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // SNOW
+        /* SNOW BIOME */
         presetSnowFoldout = EditorGUILayout.Foldout(presetSnowFoldout, "Snow", true);
         if (presetSnowFoldout)
         {
@@ -469,11 +567,21 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Snow"))
-                    CreatePresetRule("Snow Sparse Trees", 0.08f, 0.55f, new Vector2(0.9f, 1.2f), 30f, 1.4f);
+                if (GUILayout.Button("Sparse Snow", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Snow Sparse Trees",
+                        0.08f, 0.55f,
+                        new Vector2(0.9f, 1.2f),
+                        30f, 1.4f,
+                        new Vector3(0.04f, 0.45f, 0.04f),
+                        0.016f, 0.14f);
 
-                if (GUILayout.Button("Snow Forest"))
-                    CreatePresetRule("Snow Forest", 0.25f, 0.40f, new Vector2(0.8f, 1.3f), 35f, 1.6f);
+                if (GUILayout.Button("Snow Forest", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Snow Forest",
+                        0.25f, 0.40f,
+                        new Vector2(0.8f, 1.3f),
+                        35f, 1.6f,
+                        new Vector3(0.06f, 0.50f, 0.06f),
+                        0.018f, 0.16f);
             }
 
             EditorGUILayout.EndVertical();
@@ -481,7 +589,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(6);
 
-        // DESERT
+        /* DESERT */
         presetDesertFoldout = EditorGUILayout.Foldout(presetDesertFoldout, "Desert", true);
         if (presetDesertFoldout)
         {
@@ -489,11 +597,21 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Desert"))
-                    CreatePresetRule("Desert Sparse Rocks", 0.04f, 0.60f, new Vector2(0.7f, 1.1f), 50f, 0.4f);
+                if (GUILayout.Button("Sparse Desert", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Desert Sparse Rocks",
+                        0.04f, 0.60f,
+                        new Vector2(0.7f, 1.1f),
+                        50f, 0.4f,
+                        new Vector3(0.10f, 0.05f, 0.10f),
+                        0.018f, 0.12f);
 
-                if (GUILayout.Button("Dune Clutter"))
-                    CreatePresetRule("Dune Clutter", 0.12f, 0.45f, new Vector2(0.9f, 1.3f), 60f, 0.5f);
+                if (GUILayout.Button("Dune Clutter", GUILayout.Width(presetButtonWidth)))
+                    CreatePresetRule("Dune Clutter",
+                        0.12f, 0.45f,
+                        new Vector2(0.9f, 1.3f),
+                        60f, 0.5f,
+                        new Vector3(0.15f, 0.10f, 0.15f),
+                        0.02f, 0.14f);
             }
 
             EditorGUILayout.EndVertical();
@@ -526,12 +644,10 @@ public partial class TerrainPrefabPainter
                 GUILayout.Width(200)
             );
 
-            // Weight slider
             variant.weight = EditorGUILayout.Slider(
                 variant.weight, 1f, 100f, GUILayout.Width(150)
             );
 
-            // Normalized percentage
             float total = 0f;
             for (int t = 0; t < rule.variants.Length; t++)
                 total += rule.variants[t].weight;
@@ -573,16 +689,13 @@ public partial class TerrainPrefabPainter
             rule.maxSlope
         );
 
-        // Terrain layer filter dropdown
         int splatPopup = EditorGUILayout.Popup(
             new GUIContent("Terrain Layer", "Only spawn on this terrain layer. Uses alphamap weight."),
             rule.splatIndex + 1,
             WithNoneFirst(splatLabels)
         );
 
-        // Convert popup back to -1 = None
         rule.splatIndex = splatPopup - 1;
-
 
         rule.noiseScale = EditorGUILayout.FloatField(
             new GUIContent("Noise Scale", "Scale of noise for this rule."),
@@ -597,6 +710,21 @@ public partial class TerrainPrefabPainter
         rule.randomScale = EditorGUILayout.Vector2Field(
             new GUIContent("Random Scale", "Min and Max scale."),
             rule.randomScale
+        );
+        
+        rule.axisVariance = EditorGUILayout.Vector3Field(
+            new GUIContent("Axis Variance", "Extra non-uniform random scale"),
+            rule.axisVariance
+        );
+
+        rule.shapeNoiseScale = EditorGUILayout.FloatField(
+            new GUIContent("Shape Noise Scale", "Perlin noise sampling size"),
+            rule.shapeNoiseScale
+        );
+
+        rule.shapeNoiseStrength = EditorGUILayout.FloatField(
+            new GUIContent("Shape Noise Strength", "How much the noise affects scale"),
+            rule.shapeNoiseStrength
         );
 
         rule.clearRadius = EditorGUILayout.FloatField(

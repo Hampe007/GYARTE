@@ -23,8 +23,12 @@ public partial class TerrainPrefabPainter
         public float noiseThreshold = 0.5f;
 
         public Vector2 randomScale = new Vector2(0.9f, 1.2f);
+        public Vector3 axisVariance = Vector3.zero;    
+        public float shapeNoiseScale = 0f;            
+        public float shapeNoiseStrength = 0f;         
+        
         public float clearRadius = 1.5f;
-
+        
         public bool deleteBeforeSpawn = false;
 
         public bool useVolumeArea = false;
@@ -32,6 +36,9 @@ public partial class TerrainPrefabPainter
 
         // Saved detail values so we can restore grass after deletion
         public Dictionary<Vector2Int, int> clearedGrass;
+        
+        [System.NonSerialized] 
+        public float cachedVariantWeight = 0f;
     }
 
     [System.Serializable]
