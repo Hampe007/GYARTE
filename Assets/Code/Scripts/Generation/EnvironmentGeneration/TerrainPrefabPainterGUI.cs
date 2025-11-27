@@ -58,20 +58,58 @@ public partial class TerrainPrefabPainter
     {
         EditorGUILayout.Space(6);
 
-        terrain = (Terrain)EditorGUILayout.ObjectField(
-            new GUIContent(
-                "Terrain",
-                "Terrain used for detail painting and prefab sampling."
-            ),
-            terrain,
-            typeof(Terrain),
-            true
-        );
+        /* Auto assign master terrain */
+        if (!terrain)
+        {
+            var allTerrains = FindObjectsByType<Terrain>(FindObjectsSortMode.None);
+            foreach (var t in allTerrains)
+            {
+                if (t.name.Contains("MasterTerrain"))
+                {
+                    terrain = t;
+                    break;
+                }
+            }
+
+            if (!terrain && allTerrains.Length > 0)
+                terrain = allTerrains[0]; // fallback
+        }
 
         if (!terrain || !terrain.terrainData)
         {
-            EditorGUILayout.HelpBox("Assign a Terrain.", MessageType.Info);
+            EditorGUILayout.HelpBox("No master terrain found in scene.", MessageType.Warning);
+
+            if (GUILayout.Button("Manually Select Terrain"))
+            {
+                allowTerrainOverride = true;
+            }
+
+            if (allowTerrainOverride)
+            {
+                terrain = (Terrain)EditorGUILayout.ObjectField(
+                    "Terrain Override", terrain, typeof(Terrain), true
+                );
+            }
             return;
+        }
+
+        /* Locked display */
+        EditorGUILayout.LabelField("Active Terrain (Locked):", EditorStyles.boldLabel);
+        EditorGUI.BeginDisabledGroup(true);
+        EditorGUILayout.ObjectField("Terrain", terrain, typeof(Terrain), true);
+        EditorGUI.EndDisabledGroup();
+
+        /* Manual switch button */
+        if (GUILayout.Button("Switch Terrain"))
+        {
+            allowTerrainOverride = !allowTerrainOverride;
+        }
+
+        if (allowTerrainOverride)
+        {
+            terrain = (Terrain)EditorGUILayout.ObjectField(
+                "Select New Terrain", terrain, typeof(Terrain), true
+            );
         }
 
         EnsureLabelArrays(terrain.terrainData);
@@ -334,7 +372,51 @@ public partial class TerrainPrefabPainter
         {
             DeleteLastSession();
         }
+        
+        EditorGUILayout.Space(10);
+        EditorGUILayout.LabelField("Batch Visibility", EditorStyles.boldLabel);
 
+        // Show last batch in hierarchy
+        if (GUILayout.Button("Show Last Batch (Debug)"))
+        {
+            if (lastBatchRoot != null)
+                SetHideFlagsRecursive(lastBatchRoot, HideFlags.None);
+            else
+                Debug.LogWarning("No batch recorded yet. Paint something first.");
+        }
+
+        // Hide last batch again
+        if (GUILayout.Button("Hide Last Batch"))
+        {
+            if (lastBatchRoot != null)
+                SetHideFlagsRecursive(lastBatchRoot, HideFlags.HideInHierarchy);
+        }
+
+        // Hide ALL batches (recommended for editor performance)
+        if (GUILayout.Button("Hide All Batches"))
+        {
+            if (prefabRoot != null)
+                SetHideFlagsRecursive(prefabRoot, HideFlags.HideInHierarchy);
+        }
+
+        // Show ALL batches (WARNING: editor will lag!)
+        Color old = GUI.backgroundColor;
+        GUI.backgroundColor = Color.yellow;
+        if (GUILayout.Button("Show ALL Batches (Lag Warning!)"))
+        {
+            bool confirm = EditorUtility.DisplayDialog(
+                "Warning",
+                "Showing ALL batches in the hierarchy can cause editor lag.\nAre you sure?",
+                "Yes", "Cancel");
+
+            if (confirm && prefabRoot != null)
+                SetHideFlagsRecursive(prefabRoot, HideFlags.None);
+        }
+        GUI.backgroundColor = old;
+
+        EditorGUILayout.Space(10);
+        EditorGUILayout.LabelField("Painting", EditorStyles.boldLabel);
+        
         using (new EditorGUILayout.HorizontalScope())
         {
             if (GUILayout.Button(
@@ -775,27 +857,51 @@ public partial class TerrainPrefabPainter
 
     void DrawRuleDensityEstimate(PrefabPaintRule rule)
     {
-        if (!terrain || !terrain.terrainData)
+        if (!terrain || !terrain.terrainData || rule == null)
             return;
 
         TerrainData td = terrain.terrainData;
-        int detailRes = td.detailResolution;
-        float cellSize = td.size.x / detailRes;
-        float cellArea = cellSize * cellSize;
 
+        // Probability based on rule settings
         float heightFactor = Mathf.Clamp01((rule.maxHeight - rule.minHeight) / td.size.y);
-        float slopeFactor = Mathf.Clamp01((rule.maxSlope / 90f));
+        float slopeFactor = Mathf.Clamp01(rule.maxSlope / 90f);
         float noiseFactor = 1f - rule.noiseThreshold;
 
+        // This is how likely a sample becomes a prefab
         float spawnChance = rule.density * heightFactor * slopeFactor * noiseFactor;
-        float prefabsPerM2 = spawnChance / cellArea;
+        spawnChance = Mathf.Clamp01(spawnChance);
 
-        float terrainArea = td.size.x * td.size.z;
-        float estimatedTotal = prefabsPerM2 * terrainArea;
+        int sampleEstimate = 0;
+
+        // GLOBAL CIRCLE MODE
+        if (useGlobalCircles && globalCircles != null && globalCircles.Count > 0)
+        {
+            for (int i = 0; i < globalCircles.Count; i++)
+            {
+                var c = globalCircles[i];
+                if (c == null) continue;
+
+                float r = c.radius;
+
+                // Painter's real formula
+                int sCount = Mathf.RoundToInt(r * r * 2f);
+                sampleEstimate = Mathf.Max(sampleEstimate, sCount);
+            }
+
+            sampleEstimate = Mathf.Clamp(sampleEstimate, 5000, 50000);
+        }
+        else
+        {
+            // Full terrain mode uses detail resolution
+            int res = td.detailResolution;
+            sampleEstimate = res * res;
+        }
+
+        float estimatedTotal = spawnChance * sampleEstimate;
 
         EditorGUILayout.HelpBox(
-            $"Estimated density: {prefabsPerM2:F3} prefabs/m²\n" +
-            $"Estimated total: {estimatedTotal:F0} prefabs",
+            $"Estimated prefabs: {estimatedTotal:F0}\n" +
+            $"(Samples: {sampleEstimate})",
             MessageType.Info
         );
     }
