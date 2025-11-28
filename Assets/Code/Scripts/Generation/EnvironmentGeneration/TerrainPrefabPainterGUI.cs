@@ -258,6 +258,9 @@ public partial class TerrainPrefabPainter
             new GUIContent("Paint Prefabs", "Enable prefab placement after detail painting."),
             paintPrefabs
         );
+        
+        if (useGlobalCircles)
+            RefreshCircleList();
 
         // Global circle system UI
         useGlobalCircles = EditorGUILayout.Toggle(
@@ -486,6 +489,41 @@ public partial class TerrainPrefabPainter
         float presetButtonWidth = (EditorGUIUtility.currentViewWidth - 80f) / 2f;
         if (!presetsFoldout) return;
 
+        Color lightColor  = new Color(0.00f, 0.90f, 1.00f);  // bright cyan
+        Color mediumColor = new Color(1.00f, 0.50f, 0.00f);  // strong orange
+        Color heavyColor  = new Color(1.00f, 0.00f, 1.00f);  // magenta
+        Color defaultColor = GUI.backgroundColor;
+
+        GUIStyle legendStyle = new GUIStyle(GUI.skin.button);
+        legendStyle.fixedHeight = 18;
+        legendStyle.fontSize = 10;
+
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Density Levels", EditorStyles.boldLabel);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            // Light density
+            GUI.backgroundColor = lightColor;
+            GUILayout.Button("", legendStyle, GUILayout.Width(35));
+            GUI.backgroundColor = defaultColor;
+            GUILayout.Label("Light", GUILayout.Width(60));
+
+            // Medium density
+            GUI.backgroundColor = mediumColor;
+            GUILayout.Button("", legendStyle, GUILayout.Width(35));
+            GUI.backgroundColor = defaultColor;
+            GUILayout.Label("Medium", GUILayout.Width(60));
+
+            // Heavy density
+            GUI.backgroundColor = heavyColor;
+            GUILayout.Button("", legendStyle, GUILayout.Width(35));
+            GUI.backgroundColor = defaultColor;
+            GUILayout.Label("Heavy", GUILayout.Width(60));
+        }
+
+        EditorGUILayout.Space(10);
+
         EditorGUILayout.BeginVertical("box");
 
         /* FORESTS */
@@ -496,18 +534,22 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Sparse", "Very light forest density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Sparse Forest",
-                        0.12f, 0.55f,
-                        new Vector2(0.85f, 1.15f),
+                        0.12f, 0.55f, new Vector2(0.85f, 1.15f),
                         32f, 1.2f,
                         new Vector3(0.05f, 0.25f, 0.05f),
                         0.015f, 0.15f);
 
-                if (GUILayout.Button("Normal", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Normal", "Standard forest density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Normal Forest",
-                        0.25f, 0.40f,
-                        new Vector2(0.85f, 1.25f),
+                        0.25f, 0.40f, new Vector2(0.85f, 1.25f),
                         38f, 1.5f,
                         new Vector3(0.08f, 0.30f, 0.08f),
                         0.02f, 0.18f);
@@ -515,23 +557,28 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Dense", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = heavyColor;
+                if (GUILayout.Button(
+                        new GUIContent("Dense", "Thick forest density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Dense Forest",
-                        0.40f, 0.30f,
-                        new Vector2(0.80f, 1.30f),
+                        0.40f, 0.30f, new Vector2(0.80f, 1.30f),
                         42f, 1.5f,
                         new Vector3(0.10f, 0.35f, 0.10f),
                         0.025f, 0.22f);
 
-                if (GUILayout.Button("Overgrown", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = heavyColor;
+                if (GUILayout.Button(
+                        new GUIContent("Overgrown", "Very high forest density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Overgrown Forest",
-                        0.55f, 0.25f,
-                        new Vector2(0.80f, 1.40f),
+                        0.55f, 0.25f, new Vector2(0.80f, 1.40f),
                         45f, 1.6f,
                         new Vector3(0.15f, 0.40f, 0.15f),
                         0.03f, 0.28f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
@@ -545,18 +592,22 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Scattered", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Scattered", "Low rock presence."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Scattered Rocks",
-                        0.08f, 0.60f,
-                        new Vector2(0.6f, 1.1f),
+                        0.08f, 0.60f, new Vector2(0.6f, 1.1f),
                         50f, 0.5f,
                         new Vector3(0.15f, 0.05f, 0.15f),
                         0.01f, 0.08f);
 
-                if (GUILayout.Button("Cluster", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Cluster", "Medium rock density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Rock Cluster",
-                        0.20f, 0.40f,
-                        new Vector2(0.8f, 1.3f),
+                        0.20f, 0.40f, new Vector2(0.8f, 1.3f),
                         55f, 0.8f,
                         new Vector3(0.18f, 0.08f, 0.18f),
                         0.012f, 0.10f);
@@ -564,15 +615,18 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Boulder Field", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = heavyColor;
+                if (GUILayout.Button(
+                        new GUIContent("Boulder Field", "High boulder density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Boulder Field",
-                        0.35f, 0.30f,
-                        new Vector2(1.0f, 1.6f),
+                        0.35f, 0.30f, new Vector2(1.0f, 1.6f),
                         60f, 1.2f,
                         new Vector3(0.20f, 0.10f, 0.20f),
                         0.01f, 0.12f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
@@ -586,18 +640,22 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Garden", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Garden", "Light bushes."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Garden Bushes",
-                        0.12f, 0.50f,
-                        new Vector2(0.7f, 1.0f),
+                        0.12f, 0.50f, new Vector2(0.7f, 1.0f),
                         25f, 0.5f,
                         new Vector3(0.08f, 0.12f, 0.08f),
                         0.015f, 0.10f);
 
-                if (GUILayout.Button("Wild", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Wild", "Medium bush density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Wild Bushes",
-                        0.25f, 0.40f,
-                        new Vector2(0.8f, 1.2f),
+                        0.25f, 0.40f, new Vector2(0.8f, 1.2f),
                         35f, 0.6f,
                         new Vector3(0.12f, 0.20f, 0.12f),
                         0.02f, 0.14f);
@@ -605,15 +663,18 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Underbrush", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = heavyColor;
+                if (GUILayout.Button(
+                        new GUIContent("Underbrush", "Dense ground bushes."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Thick Underbrush",
-                        0.45f, 0.30f,
-                        new Vector2(0.9f, 1.3f),
+                        0.45f, 0.30f, new Vector2(0.9f, 1.3f),
                         40f, 0.8f,
                         new Vector3(0.15f, 0.25f, 0.15f),
                         0.025f, 0.18f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
@@ -627,23 +688,28 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Flowers"))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Sparse Flowers", "Light flower scattering."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Sparse Flowers",
-                        0.05f, 0.65f,
-                        new Vector2(0.7f, 1.1f),
+                        0.05f, 0.65f, new Vector2(0.7f, 1.1f),
                         25f, 0.3f,
                         new Vector3(0.05f, 0.10f, 0.05f),
                         0.015f, 0.12f);
 
-                if (GUILayout.Button("Meadow"))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Meadow", "Dense colorful flower meadow."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Flower Meadow",
-                        0.18f, 0.45f,
-                        new Vector2(0.8f, 1.2f),
+                        0.18f, 0.45f, new Vector2(0.8f, 1.2f),
                         30f, 0.4f,
                         new Vector3(0.08f, 0.15f, 0.08f),
                         0.02f, 0.14f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
@@ -657,29 +723,34 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Dead"))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Sparse Dead", "Few dead trees, light density."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Dead Trees",
-                        0.10f, 0.60f,
-                        new Vector2(0.9f, 1.1f),
+                        0.10f, 0.60f, new Vector2(0.9f, 1.1f),
                         35f, 1.2f,
                         new Vector3(0.05f, 0.20f, 0.05f),
                         0.012f, 0.10f);
 
-                if (GUILayout.Button("Witch Forest"))
+                GUI.backgroundColor = heavyColor;
+                if (GUILayout.Button(
+                        new GUIContent("Witch Forest", "Dense, spooky forest."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Witch Forest",
-                        0.30f, 0.40f,
-                        new Vector2(0.8f, 1.2f),
+                        0.30f, 0.40f, new Vector2(0.8f, 1.2f),
                         50f, 1.5f,
                         new Vector3(0.12f, 0.35f, 0.12f),
                         0.02f, 0.20f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
         EditorGUILayout.Space(6);
 
-        /* SNOW BIOME */
+        /* SNOW */
         presetSnowFoldout = EditorGUILayout.Foldout(presetSnowFoldout, "Snow", true);
         if (presetSnowFoldout)
         {
@@ -687,23 +758,28 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Snow", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Sparse Snow", "Light snowy trees."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Snow Sparse Trees",
-                        0.08f, 0.55f,
-                        new Vector2(0.9f, 1.2f),
+                        0.08f, 0.55f, new Vector2(0.9f, 1.2f),
                         30f, 1.4f,
                         new Vector3(0.04f, 0.45f, 0.04f),
                         0.016f, 0.14f);
 
-                if (GUILayout.Button("Snow Forest", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Snow Forest", "Dense snow forest."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Snow Forest",
-                        0.25f, 0.40f,
-                        new Vector2(0.8f, 1.3f),
+                        0.25f, 0.40f, new Vector2(0.8f, 1.3f),
                         35f, 1.6f,
                         new Vector3(0.06f, 0.50f, 0.06f),
                         0.018f, 0.16f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 
@@ -717,23 +793,28 @@ public partial class TerrainPrefabPainter
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Sparse Desert", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = lightColor;
+                if (GUILayout.Button(
+                        new GUIContent("Sparse Desert", "Very light desert clutter."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Desert Sparse Rocks",
-                        0.04f, 0.60f,
-                        new Vector2(0.7f, 1.1f),
+                        0.04f, 0.60f, new Vector2(0.7f, 1.1f),
                         50f, 0.4f,
                         new Vector3(0.10f, 0.05f, 0.10f),
                         0.018f, 0.12f);
 
-                if (GUILayout.Button("Dune Clutter", GUILayout.Width(presetButtonWidth)))
+                GUI.backgroundColor = mediumColor;
+                if (GUILayout.Button(
+                        new GUIContent("Dune Clutter", "Medium desert clutter."),
+                        GUILayout.Width(presetButtonWidth)))
                     CreatePresetRule("Dune Clutter",
-                        0.12f, 0.45f,
-                        new Vector2(0.9f, 1.3f),
+                        0.12f, 0.45f, new Vector2(0.9f, 1.3f),
                         60f, 0.5f,
                         new Vector3(0.15f, 0.10f, 0.15f),
                         0.02f, 0.14f);
             }
 
+            GUI.backgroundColor = defaultColor;
             EditorGUILayout.EndVertical();
         }
 

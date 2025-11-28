@@ -408,6 +408,13 @@ public partial class TerrainPrefabPainter : EditorWindow
         if (activeRules.Count == 0)
             return spawnedCount;
 
+        // Reset batch indices once per paint pass
+        for (int i = 0; i < activeRules.Count; i++)
+        {
+            var rule = activeRules[i];
+            rule.variantBatchIndex = new Dictionary<string, int>();
+        }
+        
         int hmResMinus1 = Mathf.Max(1, hmRes - 1);
         int amResMinus1 = Mathf.Max(1, amRes - 1);
         float invHmResMinus1 = 1f / hmResMinus1;
@@ -549,21 +556,13 @@ public partial class TerrainPrefabPainter : EditorWindow
                     instance.transform.position = pos;
                     instance.transform.rotation = Quaternion.Euler(0, randomY, 0);
                 }
-
-                // Parenting
+                
                 Transform ruleRoot = GetRuleRoot(rule);
 
-                if (hasVariants && chosenPrefab != rule.prefab)
-                {
-                    Transform variantRoot = GetVariantRoot(rule, ruleRoot, chosenPrefab.name);
-                    instance.transform.SetParent(variantRoot, true);
-                    lastBatchRoot = variantRoot;
-                }
-                else
-                {
-                    instance.transform.SetParent(ruleRoot, true);
-                }
-
+                // Global Batching
+                Transform batchRoot = GetGlobalBatchRoot(rule, ruleRoot);
+                instance.transform.SetParent(batchRoot, true);
+                lastBatchRoot = batchRoot;
 
                 // Grass clearing
                 if (rule.clearRadius > 0f)
@@ -588,6 +587,7 @@ public partial class TerrainPrefabPainter : EditorWindow
         {
             int samples = 0;
 
+            // Pick sample count based on largest circle
             for (int i = 0; i < globalCircles.Count; i++)
             {
                 float r = globalCircles[i].radius;
@@ -604,7 +604,9 @@ public partial class TerrainPrefabPainter : EditorWindow
                     CleanupCancelledSession();
                     return spawnedCount;
                 }
+
                 var c = globalCircles[rand.Next(globalCircles.Count)];
+                if (!c) continue;
 
                 float u = (float)rand.NextDouble();
                 float a = (float)rand.NextDouble() * Mathf.PI * 2f;
@@ -616,7 +618,8 @@ public partial class TerrainPrefabPainter : EditorWindow
                 float nx = Mathf.Clamp01((wx - origin.x) / size.x);
                 float ny = Mathf.Clamp01((wz - origin.z) / size.z);
 
-                ProcessSample(nx, ny, wx, wz);
+                if (IsInsideAnyCircle(wx, wz))
+                    ProcessSample(nx, ny, wx, wz);
             }
         }
         else
@@ -859,9 +862,61 @@ public partial class TerrainPrefabPainter : EditorWindow
         foreach (Transform child in root)
             SetHideFlagsRecursive(child, flags);
     }
+    
+    bool IsInsideAnyCircle(float wx, float wz)
+    {
+        if (!useGlobalCircles || globalCircles == null) 
+            return true;
+    
+        Vector2 p = new Vector2(wx, wz);
+    
+        for (int i = 0; i < globalCircles.Count; i++)
+        {
+            var c = globalCircles[i];
+            if (!c) continue;
+    
+            Vector2 cc = new Vector2(c.transform.position.x, c.transform.position.z);
+            float r = c.radius;
+    
+            if ((p - cc).sqrMagnitude <= r * r)
+                return true;
+        }
+    
+        return false;
+    }
 
+    
     #endregion
 
+    Transform GetGlobalBatchRoot(PrefabPaintRule rule, Transform ruleRoot)
+    {
+        if (rule.variantBatchIndex == null)
+            rule.variantBatchIndex = new Dictionary<string, int>();
+
+        // use a single key for global batching
+        const string batchKey = "_GLOBAL_";
+
+        int currentBatchIndex = 0;
+        rule.variantBatchIndex.TryGetValue(batchKey, out currentBatchIndex);
+
+        string batchName = $"Batch_{currentBatchIndex:000}";
+        Transform batchRoot = ruleRoot.Find(batchName);
+
+        if (batchRoot == null || batchRoot.childCount >= maxBatchSize)
+        {
+            currentBatchIndex++;
+            batchName = $"Batch_{currentBatchIndex:000}";
+
+            GameObject b = new GameObject(batchName);
+            batchRoot = b.transform;
+            batchRoot.SetParent(ruleRoot);
+            batchRoot.hideFlags = HideFlags.HideInHierarchy;
+
+            rule.variantBatchIndex[batchKey] = currentBatchIndex;
+        }
+
+        return batchRoot;
+    }
 
     #region Debug / Management
 
@@ -1144,16 +1199,6 @@ public partial class TerrainPrefabPainter : EditorWindow
         }
 
         currentSessionRoot.hideFlags = HideFlags.HideInHierarchy;
-        if (prefabRules != null)
-        {
-            for (int i = 0; i < prefabRules.Length; i++)
-            {
-                var rule = prefabRules[i];
-                if (rule == null) continue;
-
-                rule.variantBatchIndex = new Dictionary<string, int>();
-            }
-        }
         return currentSessionRoot;
     }
 
@@ -1185,44 +1230,6 @@ public partial class TerrainPrefabPainter : EditorWindow
 
         ArrayUtility.Add(ref prefabRules, r);
         ArrayUtility.Add(ref ruleFoldouts, true);
-    }
-
-    Transform GetVariantRoot(PrefabPaintRule rule, Transform ruleRoot, string variantName)
-    {
-        if (rule.variantBatchIndex == null)
-            rule.variantBatchIndex = new Dictionary<string, int>();
-
-        // Variant parent folder
-        Transform variantRoot = ruleRoot.Find(variantName);
-        if (variantRoot == null)
-        {
-            GameObject v = new GameObject(variantName);
-            variantRoot = v.transform;
-            variantRoot.SetParent(ruleRoot);
-            variantRoot.hideFlags = HideFlags.HideInHierarchy;
-        }
-
-        int currentBatchIndex;
-        if (!rule.variantBatchIndex.TryGetValue(variantName, out currentBatchIndex))
-            currentBatchIndex = 0;
-
-        string batchName = $"Batch_{currentBatchIndex:000}";
-        Transform batchRoot = variantRoot.Find(batchName);
-
-        if (batchRoot == null || batchRoot.childCount >= maxBatchSize)
-        {
-            currentBatchIndex++;
-            batchName = $"Batch_{currentBatchIndex:000}";
-
-            GameObject b = new GameObject(batchName);
-            batchRoot = b.transform;
-            batchRoot.SetParent(variantRoot);
-            batchRoot.hideFlags = HideFlags.HideInHierarchy;
-
-            rule.variantBatchIndex[variantName] = currentBatchIndex;
-        }
-
-        return batchRoot;
     }
 
     #endregion
