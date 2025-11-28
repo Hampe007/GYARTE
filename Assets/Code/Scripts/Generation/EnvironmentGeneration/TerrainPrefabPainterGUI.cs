@@ -23,11 +23,29 @@ public partial class TerrainPrefabPainter
         
         EditorGUILayout.Space(40);
         EditorGUILayout.HelpBox(
-            "!!! DANGER ZONE !!!\nThis will delete EVERY session and ALL spawned props.",
+            "!!! DANGER ZONE !!!\nHere you can delete ALL prefab rules or ALL spawned sessions.\nThese actions cannot be undone.",
             MessageType.Error
         );
 
         GUI.backgroundColor = Color.red;
+
+        if (GUILayout.Button(
+                new GUIContent("DELETE ALL RULES", "Deletes every prefab rule in the painter")
+            ))
+        {
+            bool confirm = EditorUtility.DisplayDialog(
+                "Delete ALL Rules",
+                "This will permanently remove EVERY prefab rule.\nThis cannot be undone.\n\nContinue?",
+                "Delete All Rules",
+                "Cancel"
+            );
+
+            if (confirm)
+            {
+                prefabRules = new PrefabPaintRule[0];
+                ruleFoldouts = new bool[0];
+            }
+        }
 
         if (GUILayout.Button(
                 new GUIContent("NUKE ALL PREFABS", "Deletes ALL sessions and ALL spawned props")
@@ -47,7 +65,6 @@ public partial class TerrainPrefabPainter
         }
 
         GUI.backgroundColor = Color.white;
-
     }
 
     #endregion
@@ -58,21 +75,37 @@ public partial class TerrainPrefabPainter
     {
         EditorGUILayout.Space(6);
 
-        /* Auto assign master terrain */
+        // Auto assign master terrain
         if (!terrain)
         {
             var allTerrains = FindObjectsByType<Terrain>(FindObjectsSortMode.None);
+
+            // Prefer exact name match "Terrain_Master"
             foreach (var t in allTerrains)
             {
-                if (t.name.Contains("MasterTerrain"))
+                if (t.name == "Terrain_Master")
                 {
                     terrain = t;
                     break;
                 }
             }
 
+            // Fallback: contains match in case user renames
+            if (!terrain)
+            {
+                foreach (var t in allTerrains)
+                {
+                    if (t.name.Contains("Terrain_Master"))
+                    {
+                        terrain = t;
+                        break;
+                    }
+                }
+            }
+
+            // Last fallback if no match at all
             if (!terrain && allTerrains.Length > 0)
-                terrain = allTerrains[0]; // fallback
+                terrain = allTerrains[0];
         }
 
         if (!terrain || !terrain.terrainData)
@@ -121,7 +154,7 @@ public partial class TerrainPrefabPainter
         );
 
         int splatPopup = EditorGUILayout.Popup(
-            new GUIContent("Confine Detail To Splat", "Optional texture filter."),
+            new GUIContent("Confine Detail To Splat", "Restricts detail painting to the selected terrain layer."),
             splatIndex + 1,
             WithNoneFirst(splatLabels)
         );
@@ -215,6 +248,9 @@ public partial class TerrainPrefabPainter
 
     void DrawPrefabRuleSection()
     {
+        int oldIndent = EditorGUI.indentLevel;
+        EditorGUI.indentLevel = 0;
+        
         EditorGUILayout.Space(20);
         EditorGUILayout.LabelField("Prefab Props", EditorStyles.boldLabel);
 
@@ -359,20 +395,22 @@ public partial class TerrainPrefabPainter
         }
 
         so.ApplyModifiedProperties();
+        
+        EditorGUI.indentLevel = oldIndent;
     }
 
     void DrawExecuteButtons()
     {
+        
         EditorGUILayout.Space(20);
 
-        // Safe delete last session button
         if (GUILayout.Button(
                 new GUIContent("Delete Last Session", "Deletes only the newest paint session")
             ))
         {
             DeleteLastSession();
         }
-        
+
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Batch Visibility", EditorStyles.boldLabel);
 
