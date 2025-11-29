@@ -323,6 +323,11 @@ public sealed class TileSceneGenerator : EditorWindow
             ),
             addToBuildSettings
         );
+        
+        if (GUILayout.Button("Clean Build Settings (Remove Missing Scenes)"))
+        {
+            RemoveMissingScenesFromBuildSettings(true);
+        }
 
         EditorGUILayout.Space();
         using (new EditorGUI.DisabledScope(!CanRun()))
@@ -368,6 +373,9 @@ public sealed class TileSceneGenerator : EditorWindow
     private void RunForAllTerrains()
     {
         _isRunning = true;
+        
+        RemoveMissingScenesFromBuildSettings(false);
+        
         _changedTerrains.Clear();
         _finalContentSummary.Clear();
         _gizmoStatus.Clear();
@@ -403,6 +411,10 @@ public sealed class TileSceneGenerator : EditorWindow
                 
                 ComputeGridFromMeters();
                 ValidateInputs();
+                DeleteOldTileScenes(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
+                DeleteOldTerrainDataAssets(_outputDataFolder, _currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
+                RemoveOldBuildSettingsEntries(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
+                
                 if (settings && settings.TryGet(_currentTerrainLabel, out var r))
                 {
                     r.origin = cachedOrigin; 
@@ -508,7 +520,108 @@ public sealed class TileSceneGenerator : EditorWindow
             _isRunning = false;
         }
     }
+    
+    private void DeleteOldTileScenes(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
+    {
+        if (!Directory.Exists(scenesFolder))
+            return;
 
+        var files = Directory.GetFiles(scenesFolder, "*.unity", SearchOption.TopDirectoryOnly);
+
+        foreach (var file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+
+            // Accept both patterns:
+            // {t}_Tile_{x}_{y} or custom but with tokens filled
+            if (!name.Contains(terrainLabel)) 
+                continue;
+
+            // Try extract tile coords from the end of name
+            var parts = name.Split('_');
+            if (parts.Length < 2) 
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                // Out of range → delete scene
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Deleting old tile scene: {file}");
+                    AssetDatabase.DeleteAsset(file);
+                }
+            }
+        }
+    }
+
+    private void DeleteOldTerrainDataAssets(string dataFolder, string terrainLabel, string prefix, int tilesX, int tilesY)
+    {
+        if (!Directory.Exists(dataFolder))
+            return;
+
+        var files = Directory.GetFiles(dataFolder, "*.asset", SearchOption.TopDirectoryOnly);
+
+        foreach (var file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+
+            // Only clean TerrainData created by the slicer
+            if (!name.StartsWith(prefix + terrainLabel + "_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Extract last two underscores: _x_y
+            var parts = name.Split('_');
+            if (parts.Length < 3)
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Deleting old TerrainData: {file}");
+                    AssetDatabase.DeleteAsset(file);
+                }
+            }
+        }
+    }
+    
+    private void RemoveOldBuildSettingsEntries(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
+    {
+        var list = EditorBuildSettings.scenes.ToList();
+        bool changed = false;
+
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            var s = list[i];
+
+            if (!s.path.Contains(scenesFolder))
+                continue;
+
+            string name = Path.GetFileNameWithoutExtension(s.path);
+
+            if (!name.Contains(terrainLabel))
+                continue;
+
+            // Extract x,y
+            var parts = name.Split('_');
+            if (parts.Length < 3)
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Removing old BuildSettings scene: {s.path}");
+                    list.RemoveAt(i);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+            EditorBuildSettings.scenes = list.ToArray();
+    }
+    
     // Build a list of stable snapshots (no Terrain refs kept).
     private List<TerrainSnapshot> CollectSnapshots(bool onlySnapshotList = false)
     {
@@ -1419,6 +1532,39 @@ public sealed class TileSceneGenerator : EditorWindow
         ordered.Add(masterLabel);
         ordered.AddRange(others.Select(o => o.label));
         return ordered;
+    }
+    
+    private static void RemoveMissingScenesFromBuildSettings(bool showPopup)
+    {
+        var list = EditorBuildSettings.scenes.ToList();
+        bool changed = false;
+        int removed = 0;
+
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            var scene = list[i];
+
+            if (!File.Exists(scene.path))
+            {
+                Debug.Log($"[TileSceneGenerator] Cleaned missing scene: {scene.path}");
+                list.RemoveAt(i);
+                removed++;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            EditorBuildSettings.scenes = list.ToArray();
+            if (showPopup)
+                EditorUtility.DisplayDialog("Clean Build Settings",
+                    $"Removed {removed} missing scene reference(s).", "OK");
+        }
+        else if (showPopup)
+        {
+            EditorUtility.DisplayDialog("Clean Build Settings",
+                "No missing scenes found.", "OK");
+        }
     }
 }
 #endif

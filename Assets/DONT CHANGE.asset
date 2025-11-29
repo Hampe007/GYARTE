@@ -13,8 +13,7 @@ MonoBehaviour:
   m_Name: DONT CHANGE
   m_EditorClassIdentifier: 
   PaletteLayers:
-  - {fileID: 8574412962073106934, guid: ac3289a82f98b8e4ba32c1f73350e2c1, type: 2}
-  - {fileID: 8574412962073106934, guid: 17de9baa5e866e94b8b437f4acc61b0a, type: 2}
-  - {fileID: 8574412962073106934, guid: fbb0ba12ae938084ea48922cee1fa2ef, type: 2}
-  - {fileID: 8574412962073106934, guid: a82dfb8c70bc9cc47afbb37d3b951df6, type: 2}
-  - {fileID: 8574412962073106934, guid: 26d2a47b8d126ea4ea187927097350a1, type: 2}
+  - {fileID: 8574412962073106934, guid: c997c17aa360cb749a27932fe3bdfcce, type: 2}
+  - {fileID: 8574412962073106934, guid: bd1fcb10d2c5b5d4ba6e01a34e4735be, type: 2}
+  - {fileID: 8574412962073106934, guid: 0ec9ff21ed5b4824abe9be9908139f39, type: 2}
+  - {fileID: 8574412962073106934, guid: 59b98ca43f27d8c4a89d4058d2a962e5, type: 2}

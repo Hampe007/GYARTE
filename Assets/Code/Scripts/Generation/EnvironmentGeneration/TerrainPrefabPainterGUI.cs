@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEditor;
+using UnityEditorInternal;
 
 public partial class TerrainPrefabPainter
 {
@@ -12,26 +13,52 @@ public partial class TerrainPrefabPainter
         SyncFoldoutArray();
 
         DrawTerrainPickerSection();
+        DrawGrassColliderBlockGUI();
         DrawDetailModeSection();
         DrawDetailMaskSection();
         DrawDetailNoiseSection();
         DrawSeedSection();
+        DrawGrassDetailOnlyBanner();
         DrawPrefabRuleSection();
         DrawExecuteButtons();
 
         EditorGUILayout.EndScrollView();
         
+        // DANGER ZONE
         EditorGUILayout.Space(40);
-        EditorGUILayout.HelpBox(
-            "!!! DANGER ZONE !!!\nHere you can delete ALL prefab rules or ALL spawned sessions.\nThese actions cannot be undone.",
-            MessageType.Error
-        );
 
+        // Start red block
+        Color oldColor = GUI.backgroundColor;
         GUI.backgroundColor = Color.red;
 
-        if (GUILayout.Button(
-                new GUIContent("DELETE ALL RULES", "Deletes every prefab rule in the painter")
-            ))
+        GUILayout.BeginVertical("box");
+
+        // Header
+        GUIStyle dzStyle = new GUIStyle(EditorStyles.boldLabel);
+        dzStyle.normal.textColor = Color.white;
+        dzStyle.fontSize = 14;
+        dzStyle.alignment = TextAnchor.MiddleCenter;
+
+        EditorGUILayout.LabelField("!!! DANGER ZONE !!!", dzStyle);
+
+        EditorGUILayout.Space(10);
+
+        // REMOVE ALL GRASS
+        if (GUILayout.Button("REMOVE ALL GRASS (Detail Layer)"))
+        {
+            bool confirm = EditorUtility.DisplayDialog(
+                "Remove ALL Grass?",
+                "This will completely clear the active detail layer.\nThis cannot be undone.",
+                "Delete Grass",
+                "Cancel"
+            );
+
+            if (confirm)
+                RemoveAllGrass();
+        }
+        
+        // DELETE ALL RULES 
+        if (GUILayout.Button("DELETE ALL RULES"))
         {
             bool confirm = EditorUtility.DisplayDialog(
                 "Delete ALL Rules",
@@ -47,16 +74,13 @@ public partial class TerrainPrefabPainter
             }
         }
 
-        if (GUILayout.Button(
-                new GUIContent("NUKE ALL PREFABS", "Deletes ALL sessions and ALL spawned props")
-            ))
+        // NUKE ALL PREFABS
+        if (GUILayout.Button("NUKE ALL PREFABS"))
         {
             bool confirm = EditorUtility.DisplayDialog(
                 "Confirm Full Nuke",
-                "You are about to delete EVERY session and ALL spawned prefabs.\n" +
-                "This cannot be undone.\n\n" +
-                "Do you really want to do this?",
-                "TACTICAL NUKE INCOMING!",
+                "This will delete ALL spawned prefab batches.\nThis cannot be undone.\n\nContinue?",
+                "TACTICAL NUKE INCOMING",
                 "Cancel"
             );
 
@@ -64,7 +88,9 @@ public partial class TerrainPrefabPainter
                 DeleteAllSessions();
         }
 
-        GUI.backgroundColor = Color.white;
+        GUILayout.EndVertical();
+
+        GUI.backgroundColor = oldColor;
     }
 
     #endregion
@@ -144,7 +170,20 @@ public partial class TerrainPrefabPainter
                 "Select New Terrain", terrain, typeof(Terrain), true
             );
         }
+        
+        ocean = (Transform)EditorGUILayout.ObjectField(
+            new GUIContent("Ocean Transform", "Assign your ocean/water object. Grass will not paint below this height."),
+            ocean,
+            typeof(Transform),
+            true
+        );
+        
+        allowUnderwaterPainting = EditorGUILayout.Toggle(
+            new GUIContent("Allow Underwater Painting", "If disabled, no grass or prefabs will paint below the ocean height."),
+            allowUnderwaterPainting
+        );
 
+        
         EnsureLabelArrays(terrain.terrainData);
 
         detailIndex = EditorGUILayout.Popup(
@@ -159,6 +198,42 @@ public partial class TerrainPrefabPainter
             WithNoneFirst(splatLabels)
         );
         splatIndex = splatPopup - 1;
+        
+        detailGrassOnly = EditorGUILayout.Toggle(
+            new GUIContent("Grass Detail Only", 
+                "If enabled, the painter will ONLY paint detail grass and skip ALL prefab spawning."),
+            detailGrassOnly
+        );
+        
+        fullGrassCoverage = EditorGUILayout.Toggle(
+            new GUIContent("Full Grass Coverage", "Paint grass on ALL areas of the selected terrain layer, ignoring all filters."),
+            fullGrassCoverage
+        );
+    }
+    
+    void DrawGrassColliderBlockGUI()
+    {
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Grass Collision Settings", EditorStyles.boldLabel);
+
+        grassBlockerLayers = EditorGUILayout.MaskField(
+            new GUIContent(
+                "Grass Blocker Layers",
+                "Which layers block grass.\nLeave empty for ALL colliders."
+            ),
+            grassBlockerLayers,
+            InternalEditorUtility.layers
+        );
+
+        grassCollisionRadius = EditorGUILayout.Slider(
+            new GUIContent(
+                "Collision Radius",
+                "Grass will not spawn if a collider is within this radius."
+            ),
+            grassCollisionRadius,
+            0.05f,
+            1.0f
+        );
     }
 
     void DrawDetailModeSection()
@@ -213,6 +288,24 @@ public partial class TerrainPrefabPainter
             new GUIContent("Max Slope", "Maximum slope allowed."),
             maxSlope, 0f, 90f
         );
+        
+        // Grass circle exclusion
+        useGrassCircleExclusion = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Use Grass Circle Exclusion",
+                "Use SpawnCircleVolume circles as NO-GRASS zones with a smooth falloff edge."
+            ),
+            useGrassCircleExclusion
+        );
+
+        grassCircleFalloff = EditorGUILayout.Slider(
+            new GUIContent(
+                "Circle Edge Falloff",
+                "Fade width at the edge of grass exclusion circles (meters)."
+            ),
+            grassCircleFalloff,
+            0f, 50f
+        );
     }
 
     void DrawDetailNoiseSection()
@@ -258,153 +351,156 @@ public partial class TerrainPrefabPainter
             new GUIContent("Paint Prefabs", "Enable prefab placement after detail painting."),
             paintPrefabs
         );
-        
-        if (useGlobalCircles)
-            RefreshCircleList();
 
-        // Global circle system UI
-        useGlobalCircles = EditorGUILayout.Toggle(
-            new GUIContent("Use Global Circle Mask", "Limit prefab painting to one or more circular areas."),
-            useGlobalCircles
-        );
-
-        if (useGlobalCircles)
+        using (new EditorGUI.DisabledScope(detailGrassOnly))
         {
-            var circles = FindObjectsByType<SpawnCircleVolume>(FindObjectsSortMode.None);
 
-            if (circles.Length == 0)
+            if (useGlobalCircles)
+                RefreshCircleList();
+
+            // Global circle system UI
+            useGlobalCircles = EditorGUILayout.Toggle(
+                new GUIContent("Use Global Circle Mask", "Limit prefab painting to one or more circular areas."),
+                useGlobalCircles
+            );
+
+            if (useGlobalCircles)
             {
-                EditorGUILayout.HelpBox(
-                    "Global Circle Mask is enabled but no circles exist.\n" +
-                    "Spawning will fall back to normal terrain mode.",
-                    MessageType.Warning
-                );
-            }
-        }
+                var circles = FindObjectsByType<SpawnCircleVolume>(FindObjectsSortMode.None);
 
-        if (useGlobalCircles)
-        {
-            EditorGUILayout.BeginVertical("box");
-
-            if (GUILayout.Button("Add Circle Volume"))
-            {
-                var c = CreateGlobalCircleVolume();
-                if (globalCircles == null)
-                    globalCircles = new System.Collections.Generic.List<SpawnCircleVolume>();
-                globalCircles.Add(c);
-            }
-
-            if (globalCircles != null && globalCircles.Count > 0)
-            {
-                EditorGUILayout.LabelField($"Circles active: {globalCircles.Count}");
-
-                if (GUILayout.Button("Remove All Circles"))
+                if (circles.Length == 0)
                 {
-                    foreach (var c in globalCircles)
-                        if (c) DestroyImmediate(c.gameObject);
-                    globalCircles.Clear();
+                    EditorGUILayout.HelpBox(
+                        "Global Circle Mask is enabled but no circles exist.\n" +
+                        "Spawning will fall back to normal terrain mode.",
+                        MessageType.Warning
+                    );
                 }
             }
 
-            EditorGUILayout.EndVertical();
-        }
-
-        if (!paintPrefabs)
-            return;
-
-        EditorGUILayout.Space(6);
-
-        if (GUILayout.Button(
-                new GUIContent("Add Prefab Rule", "Adds a new rule with default values.")
-            ))
-        {
-            var r = new PrefabPaintRule();
-            r.variants = new PrefabVariant[0];
-            ArrayUtility.Add(ref prefabRules, r);
-            ArrayUtility.Add(ref ruleFoldouts, true);
-        }
-
-        EditorGUILayout.Space(10);
-
-        DrawPresetButtons();
-
-        SyncFoldoutArray();
-
-        SerializedObject so = new SerializedObject(this);
-        SerializedProperty rulesProp = so.FindProperty("prefabRules");
-
-        int removeIndex = -1;
-
-        for (int i = 0; i < prefabRules.Length; i++)
-        {
-            var rule = prefabRules[i];
-            string header = rule.prefab ? rule.prefab.name : rule.name;
-
-            EditorGUILayout.BeginVertical("box");
-
-            ruleFoldouts[i] = EditorGUILayout.Foldout(ruleFoldouts[i], header, true);
-
-            if (!ruleFoldouts[i])
+            if (useGlobalCircles)
             {
+                EditorGUILayout.BeginVertical("box");
+
+                if (GUILayout.Button("Add Circle Volume"))
+                {
+                    var c = CreateGlobalCircleVolume();
+                    if (globalCircles == null)
+                        globalCircles = new System.Collections.Generic.List<SpawnCircleVolume>();
+                    globalCircles.Add(c);
+                }
+
+                if (globalCircles != null && globalCircles.Count > 0)
+                {
+                    EditorGUILayout.LabelField($"Circles active: {globalCircles.Count}");
+
+                    if (GUILayout.Button("Remove All Circles"))
+                    {
+                        foreach (var c in globalCircles)
+                            if (c)
+                                DestroyImmediate(c.gameObject);
+                        globalCircles.Clear();
+                    }
+                }
+
                 EditorGUILayout.EndVertical();
-                EditorGUILayout.Space(4);
-                continue;
             }
 
-            EditorGUILayout.BeginVertical("box");
-
-            rule.name = EditorGUILayout.TextField(
-                new GUIContent("Rule Name", "Optional name for UI."),
-                rule.name
-            );
-
-            rule.prefab = (GameObject)EditorGUILayout.ObjectField(
-                new GUIContent("Prefab", "Prefab to spawn."),
-                rule.prefab,
-                typeof(GameObject),
-                false
-            );
-
-            EditorGUILayout.Space(6);
-
-            DrawVariantList(rule);
-
-            EditorGUILayout.Space(6);
-
-            DrawRuleSettings(rule);
-            DrawRuleVolume(rule);
-            DrawRuleDensityEstimate(rule);
+            if (!paintPrefabs)
+                return;
 
             EditorGUILayout.Space(6);
 
             if (GUILayout.Button(
-                new GUIContent("Remove Rule", "Deletes this rule.")
-            ))
+                    new GUIContent("Add Prefab Rule", "Adds a new rule with default values.")
+                ))
             {
-                removeIndex = i;
+                var r = new PrefabPaintRule();
+                r.variants = new PrefabVariant[0];
+                ArrayUtility.Add(ref prefabRules, r);
+                ArrayUtility.Add(ref ruleFoldouts, true);
             }
 
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.EndVertical();
-            EditorGUILayout.Space(4);
+            EditorGUILayout.Space(10);
+
+            DrawPresetButtons();
+
+            SyncFoldoutArray();
+
+            SerializedObject so = new SerializedObject(this);
+
+            int removeIndex = -1;
+
+            for (int i = 0; i < prefabRules.Length; i++)
+            {
+                var rule = prefabRules[i];
+                string header = rule.prefab ? rule.prefab.name : rule.name;
+
+                EditorGUILayout.BeginVertical("box");
+
+                ruleFoldouts[i] = EditorGUILayout.Foldout(ruleFoldouts[i], header, true);
+
+                if (!ruleFoldouts[i])
+                {
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.Space(4);
+                    continue;
+                }
+
+                EditorGUILayout.BeginVertical("box");
+
+                rule.name = EditorGUILayout.TextField(
+                    new GUIContent("Rule Name", "Optional name for UI."),
+                    rule.name
+                );
+
+                rule.prefab = (GameObject)EditorGUILayout.ObjectField(
+                    new GUIContent("Prefab", "Prefab to spawn."),
+                    rule.prefab,
+                    typeof(GameObject),
+                    false
+                );
+
+                EditorGUILayout.Space(6);
+
+                DrawVariantList(rule);
+
+                EditorGUILayout.Space(6);
+
+                DrawRuleSettings(rule);
+                DrawRuleVolume(rule);
+                DrawRuleDensityEstimate(rule);
+
+                EditorGUILayout.Space(6);
+
+                if (GUILayout.Button(
+                        new GUIContent("Remove Rule", "Deletes this rule.")
+                    ))
+                {
+                    removeIndex = i;
+                }
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(4);
+            }
+
+            if (removeIndex >= 0)
+            {
+                ArrayUtility.RemoveAt(ref prefabRules, removeIndex);
+                ArrayUtility.RemoveAt(ref ruleFoldouts, removeIndex);
+
+                GUIUtility.ExitGUI();
+            }
+
+            so.ApplyModifiedProperties();
+
+            EditorGUI.indentLevel = oldIndent;
         }
-
-        if (removeIndex >= 0)
-        {
-            ArrayUtility.RemoveAt(ref prefabRules, removeIndex);
-            ArrayUtility.RemoveAt(ref ruleFoldouts, removeIndex);
-
-            GUIUtility.ExitGUI();
-        }
-
-        so.ApplyModifiedProperties();
-        
-        EditorGUI.indentLevel = oldIndent;
     }
 
     void DrawExecuteButtons()
     {
-        
         EditorGUILayout.Space(20);
 
         if (GUILayout.Button(
@@ -416,22 +512,6 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Batch Visibility", EditorStyles.boldLabel);
-
-        // Show last batch in hierarchy
-        if (GUILayout.Button("Show Last Batch (Debug)"))
-        {
-            if (lastBatchRoot != null)
-                SetHideFlagsRecursive(lastBatchRoot, HideFlags.None);
-            else
-                Debug.LogWarning("No batch recorded yet. Paint something first.");
-        }
-
-        // Hide last batch again
-        if (GUILayout.Button("Hide Last Batch"))
-        {
-            if (lastBatchRoot != null)
-                SetHideFlagsRecursive(lastBatchRoot, HideFlags.HideInHierarchy);
-        }
 
         // Hide ALL batches (recommended for editor performance)
         if (GUILayout.Button("Hide All Batches"))
@@ -457,7 +537,7 @@ public partial class TerrainPrefabPainter
 
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Painting", EditorStyles.boldLabel);
-        
+    
         using (new EditorGUILayout.HorizontalScope())
         {
             if (GUILayout.Button(
@@ -941,35 +1021,30 @@ public partial class TerrainPrefabPainter
 
     void DrawRuleVolume(PrefabPaintRule rule)
     {
-        rule.useVolumeArea = EditorGUILayout.Toggle(
-            new GUIContent("Use Volume Area", "Only spawn props inside a shaped volume region."),
-            rule.useVolumeArea
+        rule.useCircleArea = EditorGUILayout.Toggle(
+            new GUIContent(
+                "Use Circle Mask",
+                "Use ALL SpawnCircleVolume objects automatically. Include = spawn only in circles. Exclude = avoid circles."
+            ),
+            rule.useCircleArea
         );
 
-        if (!rule.useVolumeArea)
-            return;
-
-        if (rule.volumeRef == null)
+        if (rule.useCircleArea)
         {
-            EditorGUILayout.HelpBox(
-                "Volume Area is enabled but no volume exists.\n" +
-                "The rule will spawn normally until you create one.",
-                MessageType.Warning
+            rule.circleExcludes = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Exclude Mode",
+                    "Exclude = do NOT spawn inside circles. Include = ONLY spawn inside circles."
+                ),
+                rule.circleExcludes
             );
-
-            if (GUILayout.Button("Create Volume Area"))
-            {
-                rule.volumeRef = CreateForestVolumeGizmo(rule.name);
-            }
         }
-        else
+        
+        if (rule.useCircleArea)
         {
-            EditorGUILayout.HelpBox("Volume area active in scene. Move/resize it freely.", MessageType.Info);
-
-            if (GUILayout.Button("Remove Volume Area"))
+            if (GUILayout.Button("Create Circle Volume"))
             {
-                DestroyImmediate(rule.volumeRef.gameObject);
-                rule.volumeRef = null;
+                CreateCircleForRule(rule);
             }
         }
     }
@@ -1023,6 +1098,30 @@ public partial class TerrainPrefabPainter
             $"(Samples: {sampleEstimate})",
             MessageType.Info
         );
+    }
+    
+    void DrawGrassDetailOnlyBanner()
+    {
+        if (!detailGrassOnly)
+            return;
+
+        EditorGUILayout.Space(10);
+
+        GUIStyle banner = new GUIStyle(EditorStyles.helpBox);
+        banner.fontSize = 14;
+        banner.fontStyle = FontStyle.Bold;
+        banner.normal.textColor = Color.white;
+        banner.alignment = TextAnchor.MiddleCenter;
+        banner.fixedHeight = 32;
+
+        Color oldColor = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.1f, 0.45f, 1f);
+
+        EditorGUILayout.LabelField("GRASS DETAIL MODE ACTIVE (NO PREFABS)", banner);
+
+        GUI.backgroundColor = oldColor;
+
+        EditorGUILayout.Space(10);
     }
 
     #endregion

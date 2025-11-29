@@ -33,6 +33,11 @@ public class TileStreamCoordinator : NetworkBehaviour
     public bool offlineStandalone = true;
     public Transform offlineTarget;
     private Coroutine offlineLoop;
+    
+    [SerializeField] private Terrain masterTerrain;
+    [SerializeField] private bool disableMasterOnStart = true;
+
+    private bool masterDisabled = false;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -77,6 +82,18 @@ public class TileStreamCoordinator : NetworkBehaviour
         UpdateRadiusCache();
     }
 
+    private void Update()
+    {
+        if (!masterDisabled && clientLoaded.Count > 0)
+        {
+            if (masterTerrain != null && disableMasterOnStart)
+            {
+                masterTerrain.gameObject.SetActive(false);
+                masterDisabled = true;
+            }
+        }
+    }
+    
     private void LateUpdate()
     {
         UpdateRadiusCache();

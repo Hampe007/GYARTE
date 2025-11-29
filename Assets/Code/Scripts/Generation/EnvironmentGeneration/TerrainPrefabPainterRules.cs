@@ -31,8 +31,8 @@ public partial class TerrainPrefabPainter
     
         public bool deleteBeforeSpawn = false;
 
-        public bool useVolumeArea = false;
-        public ForestAreaVolume volumeRef = null;
+        public bool useCircleArea;
+        public bool circleExcludes = true;
 
         // Saved detail values so we can restore grass after deletion
         public Dictionary<Vector2Int, int> clearedGrass;
@@ -55,19 +55,6 @@ public partial class TerrainPrefabPainter
 }
 
 #region Helper Components
-
-// Marker component for spawned props
-public class TileProp : MonoBehaviour {}
-
-public class ForestAreaVolume : MonoBehaviour
-{
-    public BoxCollider col;
-
-    void OnValidate()
-    {
-        col = GetComponent<BoxCollider>();
-    }
-}
 
 // Circle area used for global sampling
 public class SpawnCircleVolume : MonoBehaviour

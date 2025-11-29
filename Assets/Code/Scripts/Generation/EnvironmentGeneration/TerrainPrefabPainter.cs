@@ -6,65 +6,103 @@ public partial class TerrainPrefabPainter : EditorWindow
 {
     #region Fields
 
+    // Terrain & core painter state
     Terrain terrain;
-
     int detailIndex = 0;
     int splatIndex = -1;
 
+    // Detail paint mode
     bool addMode = true;
     int maxAddPerCell = 6;
     int targetDensity = 12;
+    
+    // Grass collider buffer
+    static readonly Collider[] grassHitBuffer = new Collider[16];
+    [SerializeField] LayerMask grassBlockerLayers = ~0; // everything by default
+    [SerializeField] float grassCollisionRadius = 0.35f; // tweakable
 
+    // Height & slope filters
     float minHeight = 0f;
     float maxHeight = 1000f;
     float maxSlope = 35f;
 
+    // Noise filtering
     float noiseScale = 0.003f;
     float noiseThreshold = 0.45f;
 
+    // Random seed
     int seed = 12345;
 
+    // Cached UI labels
     string[] detailLabels = new string[0];
-    string[] splatLabels = new string[0];
+    string[] splatLabels  = new string[0];
 
+    // Editor scroll
     Vector2 scroll;
 
+    // Prefab rule system
     [SerializeField] bool paintPrefabs = false;
     [SerializeField] PrefabPaintRule[] prefabRules;
     [SerializeField] bool[] ruleFoldouts;
 
-    bool presetsFoldout = false;
+    // Preset foldouts
+    bool presetsFoldout       = false;
     bool presetForestsFoldout = false;
-    bool presetRocksFoldout = false;
-    bool presetBushesFoldout = false;
+    bool presetRocksFoldout   = false;
+    bool presetBushesFoldout  = false;
     bool presetFlowersFoldout = false;
-    bool presetDeadFoldout = false;
-    bool presetSnowFoldout = false;
-    bool presetDesertFoldout = false;
+    bool presetDeadFoldout    = false;
+    bool presetSnowFoldout    = false;
+    bool presetDesertFoldout  = false;
 
+    // Grass clearing utility
     public float clearRadius = 1.5f;
 
-    [SerializeField] private List<SpawnCircleVolume> globalCircles = new List<SpawnCircleVolume>();
+    // Global circle mask system
+    [SerializeField] private List<SpawnCircleVolume> globalCircles;
     bool useGlobalCircles = false;
+    
+    // Grass circle exclusion
+    [SerializeField] private bool useGrassCircleExclusion = false;
+    [SerializeField] private float grassCircleFalloff = 8f;
 
+    // Hierarchy roots
     private Transform prefabRoot;
-    
-    [SerializeField] private int paintSessionIndex = 0;
     private Transform currentSessionRoot;
-    
+
+    // Paint session index
+    [SerializeField] private int paintSessionIndex = 0;
+
+    // Batch spawning
     [SerializeField] private int maxBatchSize = 100;
     [SerializeField] private Transform lastBatchRoot;
     
+    // Cached batch roots for stable batching
+    Dictionary<(PrefabPaintRule rule, int batchIndex), Transform> cachedBatchRoots;
+
+    // Terrain cached data
     float[,] cachedSlopes;
     float[,,] cachedAlpha;
     int terrainLayerMask;
     float noiseOffsetX, noiseOffsetY;
-    
+
+    // Cancel / interrupt state
     private bool cancelRequested = false;
-    
+
+    // Optional terrain override
     [SerializeField] private bool allowTerrainOverride = false;
 
+    // Grass-only mode
+    [SerializeField] private bool detailGrassOnly = false;
+    [SerializeField] private bool fullGrassCoverage = false;
+
+    // Underwater filtering
+    [SerializeField] public float shorelineBuffer = 0.25f;
+    public bool allowUnderwaterPainting = false;
+    public Transform ocean;
+
     #endregion
+
 
 
     #region Menu
@@ -84,6 +122,8 @@ public partial class TerrainPrefabPainter : EditorWindow
     {
         RefreshLabels();
         SyncFoldoutArray();
+        AutoAssignOcean();
+        cachedBatchRoots = new Dictionary<(PrefabPaintRule rule, int batchIndex), Transform>();
     }
 
     void OnSelectionChange()
@@ -143,9 +183,24 @@ public partial class TerrainPrefabPainter : EditorWindow
     void Run(bool passPaint)
     {
         cancelRequested = false;
-        
+
+        // Correct mode logic
+        bool doGrass = detailGrassOnly || !paintPrefabs;
+        bool doPrefabs = paintPrefabs && !detailGrassOnly;
+
+        if (!doGrass && !doPrefabs)
+        {
+            Debug.Log("No painting mode active. Exiting Run().");
+            return;
+        }
+
+        cachedBatchRoots = new Dictionary<(PrefabPaintRule rule, int batchIndex), Transform>();
+
         SyncFoldoutArray();
         var td = terrain.terrainData;
+        
+        Vector3 terrainPos = terrain.transform.position;
+        Vector3 size = td.size;
 
         int detailRes = td.detailResolution;
         int hmRes = td.heightmapResolution;
@@ -154,19 +209,15 @@ public partial class TerrainPrefabPainter : EditorWindow
         float invDetailResMinus1 = 1f / Mathf.Max(1, detailRes - 1);
         float invHmResMinus1 = 1f / Mathf.Max(1, hmRes - 1);
         float terrainHeight = td.size.y;
+        
+        var heights = td.GetHeights(0, 0, hmRes, hmRes);
 
         Undo.RegisterCompleteObjectUndo(td, "Prefab Painter");
 
-        int[,] current = addMode
-            ? td.GetDetailLayer(0, 0, detailRes, detailRes, detailIndex)
-            : new int[detailRes, detailRes];
+        int[,] current = doGrass ? td.GetDetailLayer(0, 0, detailRes, detailRes, detailIndex) : null;
+        int[,] output = doGrass ? new int[detailRes, detailRes] : null;
 
-        int[,] output = new int[detailRes, detailRes];
-        var heights = td.GetHeights(0, 0, hmRes, hmRes);
-
-        /* --------------------------------------------------
-           Alpha map skip detection
-        -------------------------------------------------- */
+        float[,,] alphaAll = td.GetAlphamaps(0, 0, amRes, amRes);
 
         bool anyRuleSplat = false;
         if (prefabRules != null)
@@ -189,18 +240,13 @@ public partial class TerrainPrefabPainter : EditorWindow
         {
             try
             {
-                var alpha3D = td.GetAlphamaps(0, 0, amRes, amRes);
-
-                alphaLayer = new float[amRes, amRes];
+                var alpha3d = td.GetAlphamaps(0, 0, amRes, amRes);
                 int safe = Mathf.Clamp(splatIndex, 0, td.alphamapLayers - 1);
 
+                alphaLayer = new float[amRes, amRes];
                 for (int y = 0; y < amRes; y++)
-                {
                     for (int x = 0; x < amRes; x++)
-                    {
-                        alphaLayer[y, x] = alpha3D[y, x, safe];
-                    }
-                }
+                        alphaLayer[y, x] = alpha3d[y, x, safe];
             }
             catch
             {
@@ -209,112 +255,207 @@ public partial class TerrainPrefabPainter : EditorWindow
             }
         }
 
-        var rand = new System.Random(seed);
-
         int totalCells = 0;
         int affectedCells = 0;
 
         try
         {
-            for (int y = 0; y < detailRes; y++)
+            // GRASS DETAIL PAINTING
+            if (doGrass)
             {
-                // Throttled progress bar to reduce editor overhead
-                if (y % 64 == 0)
+                // Do we have circles for grass exclusion?
+                bool hasGrassCircles =
+                    useGrassCircleExclusion &&
+                    globalCircles != null &&
+                    globalCircles.Count > 0;
+
+                for (int y = 0; y < detailRes; y++)
                 {
-                    float progress = (float)y / detailRes;
-                    if (EditorUtility.DisplayCancelableProgressBar(
-                        "Painting Details",
-                        "Processing terrain...",
-                        progress))
+                    if (y % 64 == 0)
                     {
-                        EditorUtility.ClearProgressBar();
-                        cancelRequested = true;
-                        return;
-                    }
-                }
-
-                float ny = y * invDetailResMinus1;
-
-                for (int x = 0; x < detailRes; x++)
-                {
-                    totalCells++;
-
-                    float nx = x * invDetailResMinus1;
-
-                    int hx = Clamp01Index(Mathf.RoundToInt(nx * (hmRes - 1) * invHmResMinus1 * hmRes), hmRes);
-                    int hy = Clamp01Index(Mathf.RoundToInt(ny * (hmRes - 1) * invHmResMinus1 * hmRes), hmRes);
-
-                    float worldHeight = heights[hy, hx] * terrainHeight;
-
-                    if (worldHeight < minHeight || worldHeight > maxHeight)
-                    {
-                        output[y, x] = addMode ? current[y, x] : 0;
-                        continue;
+                        float progress = (float)y / detailRes;
+                        if (EditorUtility.DisplayCancelableProgressBar(
+                                "Painting Details",
+                                "Processing terrain...",
+                                progress))
+                        {
+                            EditorUtility.ClearProgressBar();
+                            cancelRequested = true;
+                            return;
+                        }
                     }
 
-                    float slopeDeg = Vector3.Angle(td.GetInterpolatedNormal(nx, ny), Vector3.up);
+                    float ny = y * invDetailResMinus1;
 
-                    if (slopeDeg > maxSlope)
+                    for (int x = 0; x < detailRes; x++)
                     {
-                        output[y, x] = addMode ? current[y, x] : 0;
-                        continue;
-                    }
+                        totalCells++;
 
-                    if (useAlpha && alphaLayer != null && splatIndex >= 0)
-                    {
-                        int ax = Mathf.FloorToInt(nx * (amRes - 1));
-                        int ay = Mathf.FloorToInt(ny * (amRes - 1));
+                        float nx = x * invDetailResMinus1;
 
-                        float w = alphaLayer[ay, ax];
+                        int hx = Mathf.RoundToInt(nx * (hmRes - 1));
+                        int hy = Mathf.RoundToInt(ny * (hmRes - 1));
 
-                        if (w < Safe01(splatMinCache))
+                        float worldHeight = heights[hy, hx] * terrainHeight;
+
+                        // Compute world-space XZ for grass sample (needed by circles + collider)
+                        float wx = terrainPos.x + nx * size.x;
+                        float wz = terrainPos.z + ny * size.z;
+
+                        // Underwater guard
+                        if (!allowUnderwaterPainting && ocean != null)
+                        {
+                            float waterLine = ocean.position.y;
+                            if (worldHeight < waterLine + 0.1f)
+                            {
+                                output[y, x] = addMode ? current[y, x] : 0;
+                                continue;
+                            }
+                        }
+
+                        // Alpha filter
+                        if (useAlpha && splatIndex >= 0)
+                        {
+                            int ax = Mathf.Clamp(Mathf.FloorToInt(nx * (amRes - 1)), 0, amRes - 1);
+                            int ay = Mathf.Clamp(Mathf.FloorToInt(ny * (amRes - 1)), 0, amRes - 1);
+
+                            if (alphaLayer[ay, ax] < 0.3f)
+                            {
+                                output[y, x] = addMode ? current[y, x] : 0;
+                                continue;
+                            }
+                        }
+
+                        // Noise filter
+                        if (!fullGrassCoverage)
+                        {
+                            float n = Mathf.PerlinNoise(
+                                x * Mathf.Max(noiseScale, 1e-6f) + seed * 0.1234f,
+                                y * Mathf.Max(noiseScale, 1e-6f) + seed * 0.5678f
+                            );
+
+                            if (n < noiseThreshold)
+                            {
+                                output[y, x] = addMode ? current[y, x] : 0;
+                                continue;
+                            }
+                        }
+
+                        // Circle falloff mask
+                        float densityFactor = 1f;
+
+                        if (hasGrassCircles)
+                        {
+                            float blockFactor = 0f;
+
+                            for (int c = 0; c < globalCircles.Count; c++)
+                            {
+                                var circle = globalCircles[c];
+                                if (!circle) continue;
+
+                                float r = circle.radius;
+                                Vector2 p = new Vector2(wx, wz);
+                                Vector2 cc = new Vector2(circle.transform.position.x, circle.transform.position.z);
+
+                                float dist = Vector2.Distance(p, cc);
+
+                                if (dist >= r)
+                                    continue;
+
+                                if (grassCircleFalloff <= 0f)
+                                {
+                                    blockFactor = 1f;
+                                    break;
+                                }
+
+                                float inner = Mathf.Max(0f, r - grassCircleFalloff);
+
+                                float bf;
+                                if (dist <= inner)
+                                {
+                                    bf = 1f;
+                                }
+                                else
+                                {
+                                    float t = (dist - inner) / Mathf.Max(0.001f, grassCircleFalloff);
+                                    bf = 1f - Mathf.Clamp01(t);
+                                }
+
+                                if (bf > blockFactor)
+                                    blockFactor = bf;
+                            }
+
+                            if (blockFactor >= 1f)
+                            {
+                                output[y, x] = addMode ? current[y, x] : 0;
+                                continue;
+                            }
+
+                            densityFactor = 1f - blockFactor;
+                        }
+
+                        affectedCells++;
+
+                        // COLLIDER BLOCKER CHECK (capsule)
+                        Vector3 bottom = new Vector3(wx, worldHeight + 0.2f, wz);
+                        Vector3 top = bottom + Vector3.up * 2.0f;
+
+                        int hitCount = Physics.OverlapCapsuleNonAlloc(
+                            bottom,
+                            top,
+                            grassCollisionRadius,
+                            grassHitBuffer,
+                            grassBlockerLayers
+                        );
+
+                        if (hitCount > 0)
                         {
                             output[y, x] = addMode ? current[y, x] : 0;
                             continue;
                         }
+
+                        // Final add / replace logic
+                        if (addMode)
+                        {
+                            int curr = current[y, x];
+                            int add = Mathf.Min(maxAddPerCell, 32 - curr);
+                            int target = Mathf.Clamp(curr + add, 0, 32);
+
+                            if (densityFactor < 1f)
+                                target = Mathf.RoundToInt(Mathf.Lerp(curr, target, densityFactor));
+
+                            output[y, x] = target;
+                        }
+                        else
+                        {
+                            int target = Mathf.Clamp(targetDensity, 0, 32);
+
+                            if (densityFactor < 1f)
+                                target = Mathf.RoundToInt(target * densityFactor);
+
+                            output[y, x] = target;
+                        }
                     }
 
-                    float n = Mathf.PerlinNoise(
-                        x * Mathf.Max(noiseScale, 1e-6f) + seed * 0.1234f,
-                        y * Mathf.Max(noiseScale, 1e-6f) + seed * 0.5678f
-                    );
+                }
 
-                    if (n < noiseThreshold)
-                    {
-                        output[y, x] = addMode ? current[y, x] : 0;
-                        continue;
-                    }
-
-                    affectedCells++;
-
-                    if (addMode)
-                    {
-                        int curr = current[y, x];
-                        int add = Mathf.Min(maxAddPerCell, 32 - curr);
-                        output[y, x] = Mathf.Clamp(curr + add, 0, 32);
-                    }
-                    else
-                    {
-                        output[y, x] = Mathf.Clamp(targetDensity, 0, 32);
-                    }
+                if (passPaint)
+                {
+                    td.SetDetailLayer(0, 0, detailIndex, output);
+                    EditorUtility.SetDirty(td);
                 }
             }
 
-            if (passPaint)
-            {
-                td.SetDetailLayer(0, 0, detailIndex, output);
-                EditorUtility.SetDirty(td);
-            }
-
-            if (passPaint && paintPrefabs)
+            // PREFABS
+            if (passPaint && doPrefabs)
             {
                 RefreshCircleList();
                 BuildCaches(td);
 
                 int count = PaintPrefabs(td, heights, alphaLayer);
-                Debug.Log($"[PrefabPainter] Spawned {count} prefabs.");
+                Debug.Log("[PrefabPainter] Spawned " + count + " prefabs.");
             }
-            
+
             if (passPaint)
                 paintSessionIndex++;
         }
@@ -323,20 +464,21 @@ public partial class TerrainPrefabPainter : EditorWindow
             EditorUtility.ClearProgressBar();
         }
 
-        if (passPaint)
+        // Popup only for grass mode
+        if (passPaint && doGrass)
         {
-            EditorUtility.DisplayDialog("Terrain Prefab Painter", $"Painted {affectedCells}/{totalCells} cells", "OK");
+            EditorUtility.DisplayDialog("Terrain Prefab Painter", "Painted " + affectedCells + "/" + totalCells + " cells", "OK");
         }
-        else
+        else if (!passPaint && doGrass)
         {
             LogDryRun(td, affectedCells);
-            EditorUtility.DisplayDialog("Terrain Prefab Painter", $"Dry Run: {affectedCells} cells affected", "OK");
+            EditorUtility.DisplayDialog("Terrain Prefab Painter", "Dry Run: " + affectedCells + " cells affected", "OK");
         }
+
         cancelRequested = false;
     }
 
     #endregion
-
 
     #region PrefabSpawning
 
@@ -344,6 +486,8 @@ public partial class TerrainPrefabPainter : EditorWindow
     int PaintPrefabs(TerrainData td, float[,] heights, float[,] alphaLayer)
     {
         int spawnedCount = 0;
+        
+        cachedBatchRoots = new Dictionary<(PrefabPaintRule rule, int batchIndex), Transform>();
         
         if (prefabRules == null || prefabRules.Length == 0) 
             return spawnedCount;
@@ -353,6 +497,8 @@ public partial class TerrainPrefabPainter : EditorWindow
         int hmRes = td.heightmapResolution;
         int amRes = td.alphamapResolution;
         int res = td.detailResolution;
+        
+        float[,,] alphaAll = td.GetAlphamaps(0, 0, amRes, amRes);
 
         int[,] detailBuffer = td.GetDetailLayer(0, 0, res, res, detailIndex);
 
@@ -438,6 +584,20 @@ public partial class TerrainPrefabPainter : EditorWindow
 
             float worldHeight = heights[hy, hx] * terrainHeight;
             float slopeDeg = cachedSlopes[hy, hx];
+            
+            // Prefab-only underwater + shoreline stopper
+            if (!allowUnderwaterPainting && ocean != null)
+            {
+                float waterLine = ocean.position.y;
+
+                // Underwater block
+                if (worldHeight < waterLine)
+                    return;
+
+                // Shoreline buffer block
+                if (worldHeight < waterLine + shorelineBuffer)
+                    return;
+            }
 
             // Loop rules
             for (int i = 0; i < activeRules.Count; i++)
@@ -460,14 +620,44 @@ public partial class TerrainPrefabPainter : EditorWindow
                     int ay = Mathf.FloorToInt(ny * amResMinus1);
 
                     float alpha = cachedAlpha[ay, ax, rule.splatIndex]; // use cached alphamap
-                    if (alpha < 0.01f) continue;
+                    if (alpha < 0.75f) continue;
                 }
 
-                // Volume area check
-                if (rule.useVolumeArea && rule.volumeRef != null && rule.volumeRef.col != null)
+                // Multi-circle masking (auto-detected circles)
+                if (rule.useCircleArea && globalCircles != null && globalCircles.Count > 0)
                 {
-                    Vector3 checkPos = new Vector3(wx, worldHeight, wz);
-                    if (!rule.volumeRef.col.bounds.Contains(checkPos)) continue;
+                    bool insideAny = false;
+
+                    for (int c = 0; c < globalCircles.Count; c++)
+                    {
+                        var circle = globalCircles[c];
+                        if (!circle) continue;
+
+                        float r2 = circle.radius * circle.radius;
+
+                        Vector2 p = new Vector2(wx, wz);
+                        Vector2 cc = new Vector2(circle.transform.position.x,
+                            circle.transform.position.z);
+
+                        if ((p - cc).sqrMagnitude <= r2)
+                        {
+                            insideAny = true;
+                            break;
+                        }
+                    }
+
+                    if (rule.circleExcludes)
+                    {
+                        // Exclude → skip this rule if inside ANY circle
+                        if (insideAny)
+                            continue;
+                    }
+                    else
+                    {
+                        // Include → skip this rule if NOT inside ANY circle
+                        if (!insideAny)
+                            continue;
+                    }
                 }
 
                 // Noise + density (noise first for high-density)
@@ -558,11 +748,16 @@ public partial class TerrainPrefabPainter : EditorWindow
                 }
                 
                 Transform ruleRoot = GetRuleRoot(rule);
+                if (currentSessionRoot != null && ruleRoot.parent != currentSessionRoot)
+                    ruleRoot.SetParent(currentSessionRoot);
 
                 // Global Batching
                 Transform batchRoot = GetGlobalBatchRoot(rule, ruleRoot);
                 instance.transform.SetParent(batchRoot, true);
                 lastBatchRoot = batchRoot;
+                
+                if (currentSessionRoot != null && batchRoot.parent != currentSessionRoot)
+                    batchRoot.SetParent(currentSessionRoot);
 
                 // Grass clearing
                 if (rule.clearRadius > 0f)
@@ -581,9 +776,9 @@ public partial class TerrainPrefabPainter : EditorWindow
 
         RefreshCircleList();
 
-        bool circlesAvailable = useGlobalCircles && globalCircles != null && globalCircles.Count > 0;
+        bool circlesAvailable = globalCircles != null && globalCircles.Count > 0;
 
-        if (circlesAvailable)
+        if (useGlobalCircles && circlesAvailable)
         {
             int samples = 0;
 
@@ -618,8 +813,7 @@ public partial class TerrainPrefabPainter : EditorWindow
                 float nx = Mathf.Clamp01((wx - origin.x) / size.x);
                 float ny = Mathf.Clamp01((wz - origin.z) / size.z);
 
-                if (IsInsideAnyCircle(wx, wz))
-                    ProcessSample(nx, ny, wx, wz);
+                ProcessSample(nx, ny, wx, wz);
             }
         }
         else
@@ -662,7 +856,7 @@ public partial class TerrainPrefabPainter : EditorWindow
 
     #region Helpers
 
-    float splatMinCache => 0.3f;
+    float splatMinCache => 0.01f;
 
     void RefreshLabels()
     {
@@ -865,58 +1059,146 @@ public partial class TerrainPrefabPainter : EditorWindow
     
     bool IsInsideAnyCircle(float wx, float wz)
     {
-        if (!useGlobalCircles || globalCircles == null) 
-            return true;
-    
+        if (globalCircles == null || globalCircles.Count == 0)
+            return false; // not inside ANY
+
         Vector2 p = new Vector2(wx, wz);
-    
+
         for (int i = 0; i < globalCircles.Count; i++)
         {
             var c = globalCircles[i];
             if (!c) continue;
-    
+
+            float r2 = c.radius * c.radius;
             Vector2 cc = new Vector2(c.transform.position.x, c.transform.position.z);
-            float r = c.radius;
-    
-            if ((p - cc).sqrMagnitude <= r * r)
+
+            if ((p - cc).sqrMagnitude <= r2)
                 return true;
         }
-    
+
         return false;
     }
 
-    
-    #endregion
+    void RemoveAllGrass()
+    {
+        if (!terrain || !terrain.terrainData)
+            return;
 
+        TerrainData td = terrain.terrainData;
+
+        if (detailIndex < 0 || detailIndex >= td.detailPrototypes.Length)
+            return;
+
+        int res = td.detailResolution;
+
+        int[,] empty = new int[res, res]; // autofilled with 0
+
+        td.SetDetailLayer(0, 0, detailIndex, empty);
+
+        Debug.Log("[GrassPainter] All grass removed from detail layer: " + detailIndex);
+    }
+    
     Transform GetGlobalBatchRoot(PrefabPaintRule rule, Transform ruleRoot)
     {
         if (rule.variantBatchIndex == null)
             rule.variantBatchIndex = new Dictionary<string, int>();
 
-        // use a single key for global batching
         const string batchKey = "_GLOBAL_";
 
-        int currentBatchIndex = 0;
-        rule.variantBatchIndex.TryGetValue(batchKey, out currentBatchIndex);
+        // Read current batch index
+        rule.variantBatchIndex.TryGetValue(batchKey, out int currentBatchIndex);
 
-        string batchName = $"Batch_{currentBatchIndex:000}";
-        Transform batchRoot = ruleRoot.Find(batchName);
+        var cacheKey = (rule, currentBatchIndex);
 
-        if (batchRoot == null || batchRoot.childCount >= maxBatchSize)
+        // Check existing batch
+        if (cachedBatchRoots.TryGetValue(cacheKey, out Transform cached))
         {
+            // If not full, use it
+            if (cached.childCount < maxBatchSize)
+                return cached;
+
+            // If full -> increment & create new
             currentBatchIndex++;
-            batchName = $"Batch_{currentBatchIndex:000}";
-
-            GameObject b = new GameObject(batchName);
-            batchRoot = b.transform;
-            batchRoot.SetParent(ruleRoot);
-            batchRoot.hideFlags = HideFlags.HideInHierarchy;
-
             rule.variantBatchIndex[batchKey] = currentBatchIndex;
+            cacheKey = (rule, currentBatchIndex);
         }
+
+        // Create new batch
+        string batchName = $"Batch_{currentBatchIndex:000}";
+        GameObject b = new GameObject(batchName);
+        Transform batchRoot = b.transform;
+        batchRoot.SetParent(ruleRoot);
+        batchRoot.hideFlags = HideFlags.HideInHierarchy;
+
+        // Cache it
+        cachedBatchRoots[cacheKey] = batchRoot;
 
         return batchRoot;
     }
+    
+    void AutoAssignOcean()
+    {
+        // If already assigned, do nothing
+        if (ocean != null)
+            return;
+
+        // Try common names
+        string[] names = { "Ocean", "Water", "Sea", "WaterPlane", "WaterSurface" };
+
+        for (int i = 0; i < names.Length; i++)
+        {
+            var go = GameObject.Find(names[i]);
+            if (go != null)
+            {
+                ocean = go.transform;
+                return;
+            }
+        }
+
+        // Fallback: search any transform with a water-like name
+        var allTransforms = FindObjectsOfType<Transform>();
+        for (int i = 0; i < allTransforms.Length; i++)
+        {
+            string n = allTransforms[i].name.ToLower();
+            if (n.Contains("water") || n.Contains("ocean") || n.Contains("sea"))
+            {
+                ocean = allTransforms[i];
+                return;
+            }
+        }
+    }
+   
+#if UNITY_EDITOR
+    void CreateCircleForRule(PrefabPaintRule rule)
+    {
+        // Create new GameObject
+        GameObject go = new GameObject("Circle_" + rule.name);
+        Undo.RegisterCreatedObjectUndo(go, "Create Circle Volume");
+
+        // Add circle component
+        var circle = go.AddComponent<SpawnCircleVolume>();
+        circle.radius = 25f; // default size
+
+        // Position it at terrain center
+        if (terrain != null)
+        {
+            Vector3 pos = terrain.transform.position + terrain.terrainData.size * 0.5f;
+            pos.y = terrain.transform.position.y;
+            go.transform.position = pos;
+        }
+
+        // Add to global list
+        RefreshCircleList();
+
+        // Ensure painter updates immediately
+        EditorUtility.SetDirty(this);
+
+        Debug.Log($"[Painter] Created circle for rule '{rule.name}'");
+    }
+#endif
+
+    #endregion
+    
 
     #region Debug / Management
 
@@ -1079,48 +1361,12 @@ public partial class TerrainPrefabPainter : EditorWindow
         }
     }
 
-    ForestAreaVolume CreateForestVolumeGizmo(string ruleName)
-    {
-        GameObject go = new GameObject($"Volume_{ruleName}");
-        var col = go.AddComponent<BoxCollider>();
-        col.size = new Vector3(50, 500, 50);
-        col.isTrigger = true;
-
-        var vol = go.AddComponent<ForestAreaVolume>();
-        vol.col = col;
-
-        SceneView view = SceneView.lastActiveSceneView;
-        if (view != null && view.camera != null)
-        {
-            Ray ray = new Ray(view.camera.transform.position, view.camera.transform.forward);
-            RaycastHit hit;
-
-            if (Physics.Raycast(ray, out hit, 5000f))
-            {
-                go.transform.position = hit.point;
-            }
-            else
-            {
-                go.transform.position = view.camera.transform.position + view.camera.transform.forward * 20f;
-            }
-        }
-        else
-        {
-            go.transform.position = terrain
-                ? terrain.transform.position + new Vector3(0, 2, 0)
-                : Vector3.zero;
-        }
-
-        Selection.activeGameObject = go;
-        return vol;
-    }
-
     SpawnCircleVolume CreateGlobalCircleVolume()
     {
         GameObject go = new GameObject("SpawnCircle");
 
         var vol = go.AddComponent<SpawnCircleVolume>();
-        vol.radius = 25f;
+        vol.radius = 100f;
 
         SceneView view = SceneView.lastActiveSceneView;
         if (view != null && view.camera != null && terrain != null)
@@ -1149,24 +1395,29 @@ public partial class TerrainPrefabPainter : EditorWindow
 
     Transform GetRuleRoot(PrefabPaintRule rule)
     {
-        Transform baseRoot = GetPrefabRoot();
+        if (currentSessionRoot == null)
+            GetPrefabRoot();
 
         string folderName = string.IsNullOrWhiteSpace(rule.name)
             ? (rule.prefab != null ? rule.prefab.name : "UnnamedRule")
             : rule.name;
 
-        Transform found = baseRoot.Find(folderName);
+        // Only search inside THIS session (never globally)
+        Transform found = currentSessionRoot.Find(folderName);
         if (found != null)
             return found;
 
-        GameObject newFolder = new GameObject(folderName);
-        newFolder.transform.SetParent(baseRoot);
-        newFolder.hideFlags = HideFlags.HideInHierarchy;
-        return newFolder.transform;
+        // Create rule folder under THIS session
+        GameObject folder = new GameObject(folderName);
+        folder.transform.SetParent(currentSessionRoot);
+        folder.hideFlags = HideFlags.HideInHierarchy;
+
+        return folder.transform;
     }
 
     Transform GetPrefabRoot()
     {
+        // Ensure global root exists
         if (prefabRoot == null)
         {
             var existing = GameObject.Find("TerrainPropRoot");
@@ -1181,24 +1432,22 @@ public partial class TerrainPrefabPainter : EditorWindow
             }
         }
 
-        // Hide root from hierarchy to avoid lag
         prefabRoot.hideFlags = HideFlags.HideInHierarchy;
 
-        // Create / get session folder
+        // Create / get the correct paint session folder
         string sessionName = $"PaintSession_{paintSessionIndex:000}";
         Transform session = prefabRoot.Find(sessionName);
+
         if (session == null)
         {
-            GameObject g = new GameObject(sessionName);
-            g.transform.SetParent(prefabRoot);
-            currentSessionRoot = g.transform;
-        }
-        else
-        {
-            currentSessionRoot = session;
+            GameObject sessionObj = new GameObject(sessionName);
+            sessionObj.transform.SetParent(prefabRoot);
+            session = sessionObj.transform;
         }
 
+        currentSessionRoot = session;
         currentSessionRoot.hideFlags = HideFlags.HideInHierarchy;
+
         return currentSessionRoot;
     }
 
