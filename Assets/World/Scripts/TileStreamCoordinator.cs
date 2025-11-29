@@ -42,6 +42,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private bool masterSceneUnloaded = false;
 
     private bool masterDisabled = false;
+    private bool masterWorkRunning = false;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -80,6 +81,8 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         UpdateRadiusCache();
         CacheMasterTerrainScene();
+        masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
+        masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
     }
 
     private void OnValidate()
@@ -91,8 +94,14 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         // If streaming is active, ensure the master terrain is disabled/unloaded so we don't double load
         bool streamingActive = clientLoaded.Count > 0 || serverLoaded.Count > 0;
-        bool needWork = !masterDisabled || (unloadMasterTerrainScene && !masterSceneUnloaded);
-        if (streamingActive && needWork)
+
+        bool masterActive = masterTerrain != null && masterTerrain.gameObject.activeSelf;
+        masterDisabled = !masterActive; // track actual state instead of only the cached flag
+
+        bool needDisable = streamingActive && disableMasterOnStart && masterActive;
+        bool needUnload = streamingActive && unloadMasterTerrainScene && !masterSceneUnloaded;
+
+        if ((needDisable || needUnload) && !masterWorkRunning)
         {
             StartCoroutine(EnsureMasterTerrainDisabled());
         }
@@ -569,6 +578,8 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private IEnumerator EnsureMasterTerrainDisabled()
     {
+        masterWorkRunning = true;
+
         if (masterTerrain != null && disableMasterOnStart && masterTerrain.gameObject.activeSelf)
         {
             masterTerrain.gameObject.SetActive(false);
@@ -592,10 +603,13 @@ public class TileStreamCoordinator : NetworkBehaviour
                     masterSceneUnloaded = true;
                 }
             }
+            else if (!scene.IsValid() || !scene.isLoaded)
+            {
+                masterSceneUnloaded = true;
+            }
         }
 
-        // Even if there was nothing to disable, avoid spinning up additional coroutines every frame
-        masterDisabled = true;
+        masterWorkRunning = false;
     }
     private void IncrementServerLoadsThisFrame()
     {
