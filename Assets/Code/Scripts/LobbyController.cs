@@ -269,7 +269,7 @@ public class LobbyController : MonoBehaviour
         if (startGameButton != null) startGameButton.interactable = false;
 
         // Kick off the game scene (ensure "Terrain" scene is in Build Settings)
-        const string sceneName = "Terrain";
+        const string sceneName = "GameExp1";
         Debug.Log($"[Game] ServerChangeScene('{sceneName}')");
         NetworkManager.ServerChangeScene(sceneName);         // Mirror syncs all clients to this scene
     }

@@ -34,6 +34,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "Walk",
+                    "type": "Button",
+                    "id": "22493c9a-a4c7-47ef-9995-a6163aa8f6d5",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "Sprint",
                     "type": "Button",
                     "id": "3640c29d-8fd0-428d-a3a5-d0209642b52e",
@@ -52,15 +61,6 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "Dodge",
-                    "type": "Button",
-                    "id": "6989ae38-e96b-4652-a511-6de38d2cb518",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
                     "name": "Interact",
                     "type": "Button",
                     "id": "1bc1df3b-3ac3-435b-9bc2-d9e73919d5d5",
@@ -73,33 +73,6 @@
                     "name": "Inventroy",
                     "type": "Button",
                     "id": "221dc7ab-a6c6-4f6f-9e7c-b01b03d000fe",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
-                    "name": "Slot1",
-                    "type": "Button",
-                    "id": "ddb182c4-5e7c-4b52-9846-036cf9da2165",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
-                    "name": "Slot2",
-                    "type": "Button",
-                    "id": "1f3408e9-222f-4387-b7a1-2ecba103260b",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
-                    "name": "Slot3",
-                    "type": "Button",
-                    "id": "1e874ff8-689d-4724-9e50-7c5260a0d15f",
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
@@ -259,6 +232,17 @@
                 },
                 {
                     "name": "",
+                    "id": "02efe2ca-1beb-41f6-90d3-f1e2ec0fb161",
+                    "path": "<Keyboard>/leftAlt",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Walk",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "e2879522-b11d-4cd3-ad25-3491ce9e9ed2",
                     "path": "<Keyboard>/ctrl",
                     "interactions": "",
@@ -298,50 +282,6 @@
                     "processors": "",
                     "groups": "",
                     "action": "Interact",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "d8563db3-1166-4be9-9e85-50f159834f3e",
-                    "path": "<Keyboard>/1",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Slot1",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "1cb85651-9d3a-4114-98f0-fe79f685260e",
-                    "path": "<Keyboard>/2",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Slot2",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "3b121c82-b050-4144-b3c2-592e3ce87e08",
-                    "path": "<Keyboard>/3",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Slot3",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "1c081fcb-d78c-4e38-aa33-bbde69d802c1",
-                    "path": "<Keyboard>/leftAlt",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "Dodge",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
