@@ -33,9 +33,13 @@ public class TileStreamCoordinator : NetworkBehaviour
     public bool offlineStandalone = true;
     public Transform offlineTarget;
     private Coroutine offlineLoop;
-    
+
     [SerializeField] private Terrain masterTerrain;
     [SerializeField] private bool disableMasterOnStart = true;
+    [SerializeField] private bool unloadMasterTerrainScene = true;
+
+    private string masterTerrainScenePath = string.Empty;
+    private bool masterSceneUnloaded = false;
 
     private bool masterDisabled = false;
 
@@ -75,6 +79,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private void Awake()
     {
         UpdateRadiusCache();
+        CacheMasterTerrainScene();
     }
 
     private void OnValidate()
@@ -84,13 +89,12 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void Update()
     {
-        if (!masterDisabled && clientLoaded.Count > 0)
+        // If streaming is active, ensure the master terrain is disabled/unloaded so we don't double load
+        bool streamingActive = clientLoaded.Count > 0 || serverLoaded.Count > 0;
+        bool needWork = !masterDisabled || (unloadMasterTerrainScene && !masterSceneUnloaded);
+        if (streamingActive && needWork)
         {
-            if (masterTerrain != null && disableMasterOnStart)
-            {
-                masterTerrain.gameObject.SetActive(false);
-                masterDisabled = true;
-            }
+            StartCoroutine(EnsureMasterTerrainDisabled());
         }
     }
     
@@ -223,6 +227,8 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield break;
         }
 
+        yield return EnsureMasterTerrainDisabled();
+
         var op = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
         if (op == null)
         {
@@ -342,6 +348,8 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield break;
         }
 
+        yield return EnsureMasterTerrainDisabled();
+
         var op = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
         if (op == null)
         {
@@ -409,8 +417,8 @@ public class TileStreamCoordinator : NetworkBehaviour
                 continue;
             }
 
-            Vector3 center = record.worldBounds.center;
-            if ((center - position).sqrMagnitude <= radiusSquared)
+            float sqrDistance = record.worldBounds.SqrDistance(position);
+            if (sqrDistance <= radiusSquared)
             {
                 destination.Add(record.scenePath);
             }
@@ -543,6 +551,51 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             yield return wait;
         }
+    }
+
+    private void CacheMasterTerrainScene()
+    {
+        if (masterTerrain == null)
+        {
+            return;
+        }
+
+        var scene = masterTerrain.gameObject.scene;
+        if (scene.IsValid() && scene.isLoaded)
+        {
+            masterTerrainScenePath = scene.path;
+        }
+    }
+
+    private IEnumerator EnsureMasterTerrainDisabled()
+    {
+        if (masterTerrain != null && disableMasterOnStart && masterTerrain.gameObject.activeSelf)
+        {
+            masterTerrain.gameObject.SetActive(false);
+            masterDisabled = true;
+        }
+
+        if (unloadMasterTerrainScene && !masterSceneUnloaded && !string.IsNullOrEmpty(masterTerrainScenePath))
+        {
+            var scene = SceneManager.GetSceneByPath(masterTerrainScenePath);
+            // Avoid unloading the active scene; assume master terrain lives in a dedicated additive scene
+            if (scene.IsValid() && scene.isLoaded && scene != SceneManager.GetActiveScene())
+            {
+                var op = SceneManager.UnloadSceneAsync(scene);
+                if (op != null)
+                {
+                    while (!op.isDone)
+                    {
+                        yield return null;
+                    }
+
+                    masterSceneUnloaded = true;
+                }
+            }
+        }
+
+        // Even if there was nothing to disable, avoid spinning up additional coroutines every frame
+        masterDisabled = true;
     }
     private void IncrementServerLoadsThisFrame()
     {
