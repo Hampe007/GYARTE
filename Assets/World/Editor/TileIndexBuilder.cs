@@ -47,6 +47,9 @@ public static class TileIndexBuilder
             return;
         }
 
+        // Use a generous vertical size so bounds-based distance checks include flying cameras/players
+        var boundsSize = new Vector3(size.x, Mathf.Max(size.x, 2000f), size.y);
+
         var candidates = new List<(Vector2Int coord, string path)>();
         int skippedName = 0;
 
@@ -107,7 +110,7 @@ public static class TileIndexBuilder
             var path = kv.Value;
 
             var center = new Vector3(coord.x * size.x + size.x * 0.5f, 0f, coord.y * size.y + size.y * 0.5f);
-            var bounds = new Bounds(center, new Vector3(size.x, 0f, size.y));
+            var bounds = new Bounds(center, boundsSize);
 
             records.Add(new TileIndex.TileRecord
             {
