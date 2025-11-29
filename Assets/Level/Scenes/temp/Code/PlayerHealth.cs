@@ -2,38 +2,85 @@ using Mirror;
 using UnityEngine;
 
 /// <summary>
-/// Handles player health and dead/alive state.
-/// Damage will be applied here later from the combat system.
+/// Tracks player health and death state.
+/// - Works in singleplayer.
+/// - In Mirror: only the server should modify health.
+///   Health/death are SyncVars so they replicate to clients.
 /// </summary>
 public class PlayerHealth : NetworkBehaviour
 {
     [Header("Health Settings")]
-    [Tooltip("Maximum health value the player can have.")]
+    [Tooltip("Maximum health value for the player.")]
     public float playerMaxHealth = 100f;
 
-    [Tooltip("Current health value. Starts at max health.")]
+    [SyncVar]
+    [Tooltip("Current health of the player.")]
     public float playerCurrentHealth = 100f;
 
-    [Tooltip("True when the player has died.")]
-    public bool isPlayerDead;
+    [SyncVar]
+    [Tooltip("True when the player is dead.")]
+    public bool isPlayerDead = false;
 
     private void Awake()
     {
-        // Initialize health to full.
-        playerCurrentHealth = playerMaxHealth;
-        isPlayerDead = false;
+        // Clamp starting health in case it's not set correctly.
+        playerCurrentHealth = Mathf.Clamp(playerCurrentHealth, 0f, playerMaxHealth);
     }
 
     /// <summary>
-    /// Returns true if the player is currently dead.
+    /// Applies damage to this player.
+    /// - In singleplayer: always runs.
+    /// - In Mirror: only runs on the server.
     /// </summary>
-    public bool IsPlayerDead()
+    public void TakeDamage(float damageAmount)
     {
-        return isPlayerDead;
+        if ((!NetworkServer.active && !NetworkClient.active) == false)
+        {
+            // Networking is active.
+            // Only allow the server to apply damage.
+            if (!isServer)
+            {
+                return;
+            }
+        }
+
+        if (isPlayerDead)
+        {
+            return;
+        }
+
+        if (damageAmount <= 0f)
+        {
+            return;
+        }
+
+        playerCurrentHealth -= damageAmount;
+        playerCurrentHealth = Mathf.Clamp(playerCurrentHealth, 0f, playerMaxHealth);
+
+        if (playerCurrentHealth <= 0f)
+        {
+            MarkPlayerAsDead();
+        }
     }
 
     /// <summary>
-    /// Returns health as a 0 to 1 fraction. Useful for UI later.
+    /// Marks the player as dead. Additional death logic can be added here.
+    /// </summary>
+    public void MarkPlayerAsDead()
+    {
+        if (isPlayerDead)
+        {
+            return;
+        }
+
+        isPlayerDead = true;
+
+        Debug.Log($"[PlayerHealth] Player '{gameObject.name}' died.");
+        // TODO: disable movement, trigger death animation, start respawn timer, etc.
+    }
+
+    /// <summary>
+    /// Returns current health / max health in the 0..1 range.
     /// </summary>
     public float GetHealthNormalized()
     {
@@ -46,18 +93,10 @@ public class PlayerHealth : NetworkBehaviour
     }
 
     /// <summary>
-    /// This will mark the player as dead and set health to zero.
-    /// We will call this from damage logic later.
+    /// Helper for other scripts to check if this player is dead.
     /// </summary>
-    [Server]
-    public void MarkPlayerAsDead()
+    public bool IsPlayerDead()
     {
-        if (isPlayerDead)
-        {
-            return;
-        }
-
-        playerCurrentHealth = 0f;
-        isPlayerDead = true;
+        return isPlayerDead;
     }
 }

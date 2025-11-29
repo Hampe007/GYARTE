@@ -4184,37 +4184,37 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_3.unity
     guid: 8e4fb49ae40dca94888d0ff97e5cbb7b
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_4.unity
     guid: 4d4f4a47fd0c665428e6017c9f01439b
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_4.unity
     guid: 0daa28ccb1399cb48a0aa32440e37f9d
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_5.unity
     guid: 73b86520739262a4db7265a86c85f2cb
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_5.unity
     guid: 5113651353be29b4cbca53c791ad4861
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_6.unity
     guid: 560da1826b34cd94ca770278f460d9e7
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_6.unity
     guid: ba6df589aa4075c4c9f511c70ce1ad77
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_7.unity
     guid: e93973d55a5859045bd83101866227c5
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_7.unity
     guid: 5674b21a5ebf62348a35435f82729569
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_8.unity
     guid: 49404e3ac5601b24c8767fd467446fc7
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_1_8.unity
     guid: 2ea01a62b9735f645a783ba2bad7da93
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/Tiles/Terrain_North/Terrain_West/Scenes/Terrain_West_Tile_0_9.unity
     guid: 8af22263568c6c045a541f3bb48390f6
   - enabled: 1

@@ -43,6 +43,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "EquipSword",
+                    "type": "Button",
+                    "id": "fc9fe1c1-a91a-4d16-93b4-05eee87127de",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "Sprint",
                     "type": "Button",
                     "id": "3640c29d-8fd0-428d-a3a5-d0209642b52e",
@@ -238,6 +247,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "Walk",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "fd40a08e-daf5-41c1-9844-7502af484377",
+                    "path": "<Keyboard>/r",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "EquipSword",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
