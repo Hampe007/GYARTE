@@ -26,7 +26,7 @@ public class LobbyController : MonoBehaviour
     private List<PlayerListItem> _playerListItems = new List<PlayerListItem>();
     public PlayerObjectController localPlayerController;
     private bool _gameScenePreloadStarted = false;
-    
+
     // Ready to begin
     public Button startGameButton;
     public TMP_Text readyButtonText;
@@ -281,8 +281,12 @@ public class LobbyController : MonoBehaviour
 
         // Prevent double-clicks while the scene change message is in-flight
         if (startGameButton != null) startGameButton.interactable = false;
-
+        
+        // ===============================================================================================
+        // USE "Temp Terrain" FOR DIGDIG2 BUILD TILE STREAMER DNOT WORKING, CHANGE BACK TO "Terrain" LATER
+        // ===============================================================================================
         // Kick off the game scene (ensure it is in Build Settings)
+        //const string sceneName = "Temp Terrain";
         const string sceneName = GameSceneName;
         Debug.Log($"[Game] ServerChangeScene('{sceneName}')");
         NetworkManager.ServerChangeScene(sceneName);         // Mirror syncs all clients to this scene
