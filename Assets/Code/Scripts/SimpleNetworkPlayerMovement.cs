@@ -57,6 +57,14 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         }
     }
 
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+
+        if (!isOwned)
+            DisableRemoteCameraRig(); // make sure only the owning client keeps its camera active
+    }
+
     public override void OnStartAuthority()
     {
         _yaw = transform.eulerAngles.y;
@@ -297,5 +305,19 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             mainCam.transform.SetParent(null);
 
         _cameraAttached = false;
+    }
+
+    private void DisableRemoteCameraRig()
+    {
+        if (ownerCamera != null)
+        {
+            if (_capturedInitialPriority)
+                ownerCamera.Priority.Value = _initialCameraPriority;
+
+            ownerCamera.gameObject.SetActive(false);
+        }
+
+        DetachFallbackCamera();
+        _cinemachineActive = false;
     }
 }
