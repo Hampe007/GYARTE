@@ -4,7 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public static class TileIndexBuilder
 {
@@ -46,6 +48,9 @@ public static class TileIndexBuilder
             Debug.LogError("[TileIndexBuilder] TileSizeMeters must be set to valid >0 values on TileIndex");
             return;
         }
+
+        // Use a generous vertical size so bounds-based distance checks include flying cameras/players
+        var boundsSize = new Vector3(size.x, Mathf.Max(size.x, 2000f), size.y);
 
         var candidates = new List<(Vector2Int coord, string path)>();
         int skippedName = 0;
@@ -101,13 +106,46 @@ public static class TileIndexBuilder
 
         // Build records
         var records = new List<TileIndex.TileRecord>(chosen.Count);
+        var originOffset = Vector2.zero;
+        bool originSet = false;
+        
         foreach (var kv in chosen)
         {
             var coord = kv.Key;
             var path = kv.Value;
+            
+            Vector3 center;
+            using (new SceneLoadScope(path))
+            {
+                var scene = SceneManager.GetSceneByPath(path);
+                var terrain = scene.GetRootGameObjects()
+                    .SelectMany(go => go.GetComponentsInChildren<Terrain>(true))
+                    .FirstOrDefault();
 
-            var center = new Vector3(coord.x * size.x + size.x * 0.5f, 0f, coord.y * size.y + size.y * 0.5f);
-            var bounds = new Bounds(center, new Vector3(size.x, 0f, size.y));
+                if (terrain != null)
+                {
+                    var pos = terrain.transform.position;
+                    var candidateOrigin = new Vector2(pos.x - coord.x * size.x, pos.z - coord.y * size.y);
+
+                    if (!originSet)
+                    {
+                        originOffset = candidateOrigin;
+                        originSet = true;
+                    }
+                    else if ((originOffset - candidateOrigin).sqrMagnitude > 0.0001f)
+                    {
+                        Debug.LogWarning($"[TileIndexBuilder] Tile {coord} has origin offset {candidateOrigin} that differs from {originOffset}. Using first origin.");
+                    }
+
+                    center = pos + new Vector3(size.x * 0.5f, 0f, size.y * 0.5f);
+                }
+                else
+                {
+                    center = new Vector3(coord.x * size.x + size.x * 0.5f, 0f, coord.y * size.y + size.y * 0.5f);
+                }
+            }
+
+            var bounds = new Bounds(center, boundsSize);
 
             records.Add(new TileIndex.TileRecord
             {
@@ -122,6 +160,11 @@ public static class TileIndexBuilder
             .OrderBy(r => r.coord.x)
             .ThenBy(r => r.coord.y)
             .ToList();
+        
+        if (originSet)
+        {
+            index.SetOriginOffset(originOffset);
+        }
 
         index.SetTiles(records);
         EditorUtility.SetDirty(index);
@@ -143,6 +186,24 @@ public static class TileIndexBuilder
                 Debug.LogWarning($"[TileIndexBuilder] Duplicate coord {kv.Key} from: {list}. Chosen: {chosen[kv.Key]}");
             }
             if (dupCount > 20) Debug.LogWarning($"[TileIndexBuilder] ...and {dupCount - 20} more duplicate coord groups");
+        }
+    }
+}
+
+internal readonly struct SceneLoadScope : System.IDisposable
+{
+    private readonly Scene scene;
+
+    public SceneLoadScope(string path)
+    {
+        scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+    }
+
+    public void Dispose()
+    {
+        if (scene.IsValid())
+        {
+            EditorSceneManager.CloseScene(scene, true);
         }
     }
 }

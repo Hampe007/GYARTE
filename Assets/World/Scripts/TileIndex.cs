@@ -14,14 +14,16 @@ public class TileIndex : ScriptableObject
     }
 
     [SerializeField] private Vector2 tileSizeMeters = new(250f, 250f);
-
+    [SerializeField] private Vector2 originOffsetMeters = Vector2.zero;
+    
     [SerializeField] private List<TileRecord> tiles = new();
 
     private readonly Dictionary<Vector2Int, TileRecord> coordLookup = new();
     private readonly Dictionary<string, TileRecord> pathLookup = new();
 
     public Vector2 TileSizeMeters => tileSizeMeters;
-
+    public Vector2 OriginOffsetMeters => originOffsetMeters;
+    
     public IReadOnlyList<TileRecord> Tiles => tiles;
 
     private void OnEnable()
@@ -87,8 +89,10 @@ public class TileIndex : ScriptableObject
         var sizeX = Mathf.Approximately(tileSizeMeters.x, 0f) ? 1f : tileSizeMeters.x;
         var sizeY = Mathf.Approximately(tileSizeMeters.y, 0f) ? 1f : tileSizeMeters.y;
 
-        int x = Mathf.FloorToInt(worldPos.x / sizeX);
-        int y = Mathf.FloorToInt(worldPos.z / sizeY);
+        var offsetPos = new Vector3(worldPos.x - originOffsetMeters.x, worldPos.y, worldPos.z - originOffsetMeters.y);
+
+        int x = Mathf.FloorToInt(offsetPos.x / sizeX);
+        int y = Mathf.FloorToInt(offsetPos.z / sizeY);
 
         return new Vector2Int(x, y);
     }
@@ -114,6 +118,11 @@ public class TileIndex : ScriptableObject
     }
 
 #if UNITY_EDITOR
+    public void SetOriginOffset(Vector2 newOriginOffset)
+    {
+        originOffsetMeters = newOriginOffset;
+    }
+    
     public void SetTiles(List<TileRecord> newTiles)
     {
         tiles = newTiles ?? new List<TileRecord>();

@@ -64,9 +64,10 @@ public sealed class TileSceneGenerator : EditorWindow
     // Copy Channels
     [Header("Copy Channels")]
     [SerializeField] private bool copyHeights = true;
-    [SerializeField] private bool copyAlphamaps = false;
-    [SerializeField] private bool copyDetails = false;
-    [SerializeField] private bool copyTrees = false;
+    [SerializeField] private bool copyAlphamaps = true;
+    [SerializeField] private bool copyDetails = true;
+    [SerializeField] private bool copyTrees = true;
+    [SerializeField] private bool copyProps = true;
 
     // Reslice Options
     [Header("Reslice Options")]
@@ -190,6 +191,36 @@ public sealed class TileSceneGenerator : EditorWindow
             new GUIContent("Copy Trees", "Copies tree instances into the tiles."),
             copyTrees
         );
+        copyProps = EditorGUILayout.ToggleLeft(
+            new GUIContent("Copy Props (TileProp)", "Copies GameObjects marked with TileProp from the master scene into each tile scene."),
+            copyProps
+        );
+        
+        EditorGUILayout.HelpBox(
+            "Enabling splats, details, trees, and props is far heavier than copying heights only. " +
+            "If you just need to validate slicing, run a fast pass first, then switch back to full fidelity before final export.",
+            MessageType.Info);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Preset: Fast (heights only)", GUILayout.Width(200f)))
+            {
+                copyHeights = true;
+                copyAlphamaps = false;
+                copyDetails = false;
+                copyTrees = false;
+                copyProps = false;
+            }
+
+            if (GUILayout.Button("Preset: Full fidelity (all channels)", GUILayout.Width(240f)))
+            {
+                copyHeights = true;
+                copyAlphamaps = true;
+                copyDetails = true;
+                copyTrees = true;
+                copyProps = true;
+            }
+        }
         
         // Preview all candidate terrains using the exact rules used by slicing
         if (!_isRunning)
@@ -318,6 +349,11 @@ public sealed class TileSceneGenerator : EditorWindow
             ),
             addToBuildSettings
         );
+        
+        if (GUILayout.Button("Clean Build Settings (Remove Missing Scenes)"))
+        {
+            RemoveMissingScenesFromBuildSettings(true);
+        }
 
         EditorGUILayout.Space();
         using (new EditorGUI.DisabledScope(!CanRun()))
@@ -363,6 +399,9 @@ public sealed class TileSceneGenerator : EditorWindow
     private void RunForAllTerrains()
     {
         _isRunning = true;
+        
+        RemoveMissingScenesFromBuildSettings(false);
+        
         _changedTerrains.Clear();
         _finalContentSummary.Clear();
         _gizmoStatus.Clear();
@@ -398,6 +437,10 @@ public sealed class TileSceneGenerator : EditorWindow
                 
                 ComputeGridFromMeters();
                 ValidateInputs();
+                DeleteOldTileScenes(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
+                DeleteOldTerrainDataAssets(_outputDataFolder, _currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
+                RemoveOldBuildSettingsEntries(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
+                
                 if (settings && settings.TryGet(_currentTerrainLabel, out var r))
                 {
                     r.origin = cachedOrigin; 
@@ -503,7 +546,108 @@ public sealed class TileSceneGenerator : EditorWindow
             _isRunning = false;
         }
     }
+    
+    private void DeleteOldTileScenes(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
+    {
+        if (!Directory.Exists(scenesFolder))
+            return;
 
+        var files = Directory.GetFiles(scenesFolder, "*.unity", SearchOption.TopDirectoryOnly);
+
+        foreach (var file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+
+            // Accept both patterns:
+            // {t}_Tile_{x}_{y} or custom but with tokens filled
+            if (!name.Contains(terrainLabel)) 
+                continue;
+
+            // Try extract tile coords from the end of name
+            var parts = name.Split('_');
+            if (parts.Length < 2) 
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                // Out of range → delete scene
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Deleting old tile scene: {file}");
+                    AssetDatabase.DeleteAsset(file);
+                }
+            }
+        }
+    }
+
+    private void DeleteOldTerrainDataAssets(string dataFolder, string terrainLabel, string prefix, int tilesX, int tilesY)
+    {
+        if (!Directory.Exists(dataFolder))
+            return;
+
+        var files = Directory.GetFiles(dataFolder, "*.asset", SearchOption.TopDirectoryOnly);
+
+        foreach (var file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+
+            // Only clean TerrainData created by the slicer
+            if (!name.StartsWith(prefix + terrainLabel + "_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Extract last two underscores: _x_y
+            var parts = name.Split('_');
+            if (parts.Length < 3)
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Deleting old TerrainData: {file}");
+                    AssetDatabase.DeleteAsset(file);
+                }
+            }
+        }
+    }
+    
+    private void RemoveOldBuildSettingsEntries(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
+    {
+        var list = EditorBuildSettings.scenes.ToList();
+        bool changed = false;
+
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            var s = list[i];
+
+            if (!s.path.Contains(scenesFolder))
+                continue;
+
+            string name = Path.GetFileNameWithoutExtension(s.path);
+
+            if (!name.Contains(terrainLabel))
+                continue;
+
+            // Extract x,y
+            var parts = name.Split('_');
+            if (parts.Length < 3)
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Removing old BuildSettings scene: {s.path}");
+                    list.RemoveAt(i);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+            EditorBuildSettings.scenes = list.ToArray();
+    }
+    
     // Build a list of stable snapshots (no Terrain refs kept).
     private List<TerrainSnapshot> CollectSnapshots(bool onlySnapshotList = false)
     {
@@ -714,34 +858,61 @@ public sealed class TileSceneGenerator : EditorWindow
 
         var layers = _srcTD.terrainLayers;
         var detailPrototypes = _srcTD.detailPrototypes;
-        var treePrototypes = _srcTD.treePrototypes;
         int detailLayerCount = detailPrototypes?.Length ?? 0;
+        
+        TreePrototype[] treePrototypes = null;
+        int[] treePrototypeRemap = null;
+        if (copyTrees)
+        {
+            treePrototypes = SanitizeTreePrototypes(_srcTD.treePrototypes, out treePrototypeRemap, out int missingPrototypeCount);
+
+            if (missingPrototypeCount > 0)
+            {
+                Debug.LogWarning(
+                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
+                    "Tree instances using them will be skipped during slicing."
+                );
+            }
+
+            if (treePrototypes == null || treePrototypes.Length == 0)
+            {
+                treePrototypes = null;
+                Debug.LogWarning(
+                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' does not contain any valid tree prefabs to copy."
+                );
+            }
+        }
+
+        bool canCopyTrees = copyTrees && (treePrototypes?.Length ?? 0) > 0;
 
         int total = tilesX * tilesY;
         int processed = 0;
 
-        string originalScenePath = SceneManager.GetActiveScene().path;
+        Scene masterScene = SceneManager.GetActiveScene();
+        string originalScenePath = masterScene.path;
 
         try
         {
+            List<TileIndex.TileRecord> tempIndexRecords = new List<TileIndex.TileRecord>();
+
             for (int ty = 0; ty < tilesY; ty++)
             {
                 for (int tx = 0; tx < tilesX; tx++)
                 {
                     float progress = processed / (float)total;
-                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]", $"Processing tile {tx},{ty}", progress);
+                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]",
+                        $"Processing tile {tx},{ty}", progress);
 
                     // Build new TerrainData from the source master
                     TerrainData newTD = BuildTileTerrainData(
                         tx, ty, hStepX, hStepY, aStepX, aStepY, dStepX, dStepY,
-                        layers, detailLayerCount, treePrototypes
+                        layers, detailLayerCount, treePrototypes, treePrototypeRemap
                     );
 
-                    // --- Save/replace TerrainData under the DATA subfolder, include terrain name ---
+                    // Save TerrainData under DATA folder
                     string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{_currentTerrainLabel}_{tx}_{ty}.asset";
                     var existingTD = AssetDatabase.LoadAssetAtPath<TerrainData>(tdPath);
 
-                    // Detect channel changes (only for the channels we copy)
                     bool heightsChanged = false, alphaChanged = false, detailsChanged = false, treesChanged = false;
                     int treesAdded = 0, treesRemoved = 0; bool treesModified = false;
 
@@ -756,24 +927,23 @@ public sealed class TileSceneGenerator : EditorWindow
                         if (copyDetails && (_srcTD.detailPrototypes?.Length ?? 0) > 0)
                             detailsChanged = !DetailsEqual(existingTD, newTD);
 
-                        if (copyTrees && (_srcTD.treePrototypes?.Length ?? 0) > 0)
+                        if (canCopyTrees)
                         {
-                            bool treesEqual = TreesEqualAndDeltas(existingTD, newTD, out treesAdded, out treesRemoved, out bool modified);
-                            treesChanged = !treesEqual;
+                            bool equal = TreesEqualAndDeltas(existingTD, newTD,
+                                out treesAdded, out treesRemoved, out bool modified);
+                            treesChanged = !equal;
                             treesModified = modified;
                         }
                     }
 
-                    // Update per-terrain summary flags (used for the single per-terrain log later)
-                    _changedHeights  |= heightsChanged;
-                    _changedAlpha    |= alphaChanged;
-                    _changedDetails  |= detailsChanged;
-                    _changedTrees    |= treesChanged;
-                    if (treesAdded   > 0) _treesAdded        += treesAdded;
-                    if (treesRemoved > 0) _treesRemoved      += treesRemoved;
-                    if (treesModified)    _treesModifiedTiles += 1;
+                    _changedHeights |= heightsChanged;
+                    _changedAlpha |= alphaChanged;
+                    _changedDetails |= detailsChanged;
+                    _changedTrees |= treesChanged;
+                    if (treesAdded > 0) _treesAdded += treesAdded;
+                    if (treesRemoved > 0) _treesRemoved += treesRemoved;
+                    if (treesModified) _treesModifiedTiles += 1;
 
-                    // Decide whether to write asset
                     bool anyChannelChanged = heightsChanged || alphaChanged || detailsChanged || treesChanged;
 
                     if (existingTD == null)
@@ -784,8 +954,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     {
                         if (onlyUpdateIfChanged && !anyChannelChanged)
                         {
-                            // Nothing changed in the channels we care about → reuse existing, discard new
-                            UnityEngine.Object.DestroyImmediate(newTD);
+                            DestroyImmediate(newTD);
                             newTD = existingTD;
                         }
                         else
@@ -794,7 +963,7 @@ public sealed class TileSceneGenerator : EditorWindow
                         }
                     }
 
-                    // --- Scene name/path under the SCENES subfolder, supports {t} token ---
+                    // Scene setup
                     string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
                     string tileScenePath = $"{_outputScenesFolder}/{tileSceneName}.unity";
                     bool sceneExists = File.Exists(tileScenePath);
@@ -805,8 +974,31 @@ public sealed class TileSceneGenerator : EditorWindow
                         try
                         {
                             var terrainGO = FindOrCreateTerrainGO(tx, ty, newTD, tileSize, cachedOrigin, opened);
+
+                            if (copyProps)
+                                CopyPropsIntoTileScene(masterScene, opened, tx, ty, tileSize, cachedOrigin);
+
                             EditorSceneManager.MarkSceneDirty(opened);
                             EditorSceneManager.SaveScene(opened);
+
+                            // ---------------------------
+                            // TILE INDEX RECORD (RESLICE)
+                            // ---------------------------
+                            Vector3 tileOrigin = cachedOrigin + new Vector3(
+                                tx * tileSize.x,
+                                0f,
+                                ty * tileSize.z
+                            );
+
+                            Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                            Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+
+                            tempIndexRecords.Add(new TileIndex.TileRecord
+                            {
+                                coord = new Vector2Int(tx, ty),
+                                scenePath = tileScenePath,
+                                worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                            });
                         }
                         finally
                         {
@@ -815,7 +1007,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     }
                     else
                     {
-                        // Fresh create (Additive mode so master stays loaded)
+                        // Fresh tile
                         var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
                         newScene.name = tileSceneName;
 
@@ -826,8 +1018,30 @@ public sealed class TileSceneGenerator : EditorWindow
                         var col = terrainGO.GetComponent<TerrainCollider>();
                         if (col != null) col.enabled = true;
 
+                        if (copyProps)
+                            CopyPropsIntoTileScene(masterScene, newScene, tx, ty, tileSize, cachedOrigin);
+
                         EditorSceneManager.SaveScene(newScene, tileScenePath);
                         EditorSceneManager.CloseScene(newScene, true);
+
+                        // ---------------------------
+                        // TILE INDEX RECORD (FRESH)
+                        // ---------------------------
+                        Vector3 tileOrigin = cachedOrigin + new Vector3(
+                            tx * tileSize.x,
+                            0f,
+                            ty * tileSize.z
+                        );
+
+                        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                        Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+
+                        tempIndexRecords.Add(new TileIndex.TileRecord
+                        {
+                            coord = new Vector2Int(tx, ty),
+                            scenePath = tileScenePath,
+                            worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                        });
                     }
 
                     if (addToBuildSettings)
@@ -837,21 +1051,90 @@ public sealed class TileSceneGenerator : EditorWindow
                 }
             }
 
-            AssetDatabase.SaveAssets();
+            // Write TileIndex once all tiles are processed
+            if (settings != null && settings.tileIndex != null)
+            {
+                settings.tileIndex.SetTiles(tempIndexRecords);
+                EditorUtility.SetDirty(settings.tileIndex);
+                AssetDatabase.SaveAssets();
+            }
+
             AssetDatabase.Refresh();
         }
         finally
         {
             EditorUtility.ClearProgressBar();
+
             if (!string.IsNullOrEmpty(originalScenePath) && File.Exists(originalScenePath))
                 EditorSceneManager.OpenScene(originalScenePath, OpenSceneMode.Single);
+        }
+
+    }
+
+    private void CopyPropsIntoTileScene(
+        Scene masterScene,
+        Scene tileScene,
+        int tx,
+        int ty,
+        Vector3 tileSize,
+        Vector3 terrainOrigin)
+    {
+        var tileRoots = tileScene.GetRootGameObjects();
+        var existing = tileRoots
+            .SelectMany(go => go.GetComponentsInChildren<TileProp>(true))
+            .ToArray();
+
+        for (int i = 0; i < existing.Length; i++)
+        {
+            var p = existing[i];
+            if (p && p.gameObject)
+                GameObject.DestroyImmediate(p.gameObject);
+        }
+
+        var masterRoots = masterScene.GetRootGameObjects();
+        var masterProps = masterRoots
+            .SelectMany(go => go.GetComponentsInChildren<TileProp>(true))
+            .ToArray();
+
+        if (masterProps.Length == 0) return;
+
+        float minX = terrainOrigin.x + tx * tileSize.x;
+        float maxX = minX + tileSize.x;
+        float minZ = terrainOrigin.z + ty * tileSize.z;
+        float maxZ = minZ + tileSize.z;
+
+        foreach (var prop in masterProps)
+        {
+            if (!prop || !prop.gameObject) continue;
+            Vector3 p = prop.transform.position;
+            if (p.x < minX || p.x >= maxX) continue;
+            if (p.z < minZ || p.z >= maxZ) continue;
+
+            GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(prop.gameObject);
+            GameObject clone;
+            if (prefabSource != null)
+            {
+                clone = (GameObject)PrefabUtility.InstantiatePrefab(prefabSource, tileScene);
+            }
+            else
+            {
+                clone = UnityEngine.Object.Instantiate(prop.gameObject);
+                SceneManager.MoveGameObjectToScene(clone, tileScene);
+            }
+
+            clone.transform.position = p;
+            clone.transform.rotation = prop.transform.rotation;
+            clone.transform.localScale = prop.transform.localScale;
+
+            if (!clone.GetComponent<TileProp>())
+                clone.AddComponent<TileProp>();
         }
     }
 
     private TerrainData BuildTileTerrainData(
     int tx, int ty,
     int hStepX, int hStepY, int aStepX, int aStepY, int dStepX, int dStepY,
-    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes)
+    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes, int[] treePrototypeRemap)
 {
     var td = new TerrainData();
 
@@ -900,6 +1183,23 @@ public sealed class TileSceneGenerator : EditorWindow
         var splats = _srcTD.GetAlphamaps(aX, aY, w, h);
         td.SetAlphamaps(0, 0, splats);
     }
+    else if (layers != null && layers.Length > 0)
+    {
+        // Ensure tiles still render with the base layer even when splatmaps are skipped.
+        int aTileRes = Mathf.Max(1, Mathf.RoundToInt(_srcTD.alphamapResolution / (float)tilesX));
+        td.alphamapResolution = aTileRes;
+
+        var fallback = new float[aTileRes, aTileRes, layers.Length];
+        for (int x = 0; x < aTileRes; x++)
+        {
+            for (int y = 0; y < aTileRes; y++)
+            {
+                fallback[x, y, 0] = 1f;
+            }
+        }
+
+        td.SetAlphamaps(0, 0, fallback);
+    }
 
     if (copyDetails && detailLayerCount > 0)
     {
@@ -931,6 +1231,19 @@ public sealed class TileSceneGenerator : EditorWindow
             if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
             {
                 var nt = t;
+                int mappedPrototypeIndex = nt.prototypeIndex;
+                if (treePrototypeRemap != null && treePrototypeRemap.Length > 0)
+                {
+                    if (nt.prototypeIndex < 0 || nt.prototypeIndex >= treePrototypeRemap.Length)
+                        continue;
+
+                    mappedPrototypeIndex = treePrototypeRemap[nt.prototypeIndex];
+                }
+
+                if (mappedPrototypeIndex < 0 || mappedPrototypeIndex >= treePrototypes.Length)
+                    continue;
+
+                nt.prototypeIndex = mappedPrototypeIndex;
                 nt.position = new Vector3(
                     Mathf.InverseLerp(x0, x1, t.position.x),
                     t.position.y,
@@ -1005,6 +1318,40 @@ public sealed class TileSceneGenerator : EditorWindow
         if (scenes.Any(s => s.path == scenePath)) return;
         scenes.Add(new EditorBuildSettingsScene(scenePath, true));
         EditorBuildSettings.scenes = scenes.ToArray();
+    }
+    
+    private static TreePrototype[] SanitizeTreePrototypes(TreePrototype[] prototypes, out int[] remap, out int removedCount)
+    {
+        removedCount = 0;
+
+        if (prototypes == null || prototypes.Length == 0)
+        {
+            remap = Array.Empty<int>();
+            return Array.Empty<TreePrototype>();
+        }
+
+        var valid = new List<TreePrototype>(prototypes.Length);
+        remap = new int[prototypes.Length];
+
+        for (int i = 0; i < prototypes.Length; i++)
+        {
+            var proto = prototypes[i];
+            if (proto != null && proto.prefab != null)
+            {
+                remap[i] = valid.Count;
+                valid.Add(proto);
+            }
+            else
+            {
+                remap[i] = -1;
+                removedCount++;
+            }
+        }
+
+        if (valid.Count == prototypes.Length)
+            return prototypes;
+
+        return valid.ToArray();
     }
 
     private static bool HeightsEqual(TerrainData a, TerrainData b)
@@ -1275,6 +1622,63 @@ public sealed class TileSceneGenerator : EditorWindow
         ordered.Add(masterLabel);
         ordered.AddRange(others.Select(o => o.label));
         return ordered;
+    }
+    
+    private static void RemoveMissingScenesFromBuildSettings(bool showPopup)
+    {
+        var list = EditorBuildSettings.scenes.ToList();
+        bool changed = false;
+        int removed = 0;
+
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            var scene = list[i];
+
+            if (!File.Exists(scene.path))
+            {
+                Debug.Log($"[TileSceneGenerator] Cleaned missing scene: {scene.path}");
+                list.RemoveAt(i);
+                removed++;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            EditorBuildSettings.scenes = list.ToArray();
+            if (showPopup)
+                EditorUtility.DisplayDialog("Clean Build Settings",
+                    $"Removed {removed} missing scene reference(s).", "OK");
+        }
+        else if (showPopup)
+        {
+            EditorUtility.DisplayDialog("Clean Build Settings",
+                "No missing scenes found.", "OK");
+        }
+    }
+    
+    private Bounds ComputeTileBounds(int tx, int ty, float tileSizeX, float tileSizeY, Vector3 masterOrigin)
+    {
+        // origin of this tile in world space
+        Vector3 tileOrigin = new Vector3(
+            masterOrigin.x + tx * tileSizeX,
+            masterOrigin.y,
+            masterOrigin.z + ty * tileSizeY
+        );
+
+        Vector3 center = new Vector3(
+            tileOrigin.x + tileSizeX * 0.5f,
+            masterOrigin.y + 2000f, // tall so SqrDistance always works
+            tileOrigin.z + tileSizeY * 0.5f
+        );
+
+        Vector3 extents = new Vector3(
+            tileSizeX * 0.5f,
+            2000f,                   // tall vertical range
+            tileSizeY * 0.5f
+        );
+
+        return new Bounds(center, extents * 2f);
     }
 }
 #endif
