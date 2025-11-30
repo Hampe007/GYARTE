@@ -227,6 +227,30 @@ public class CustomNetworkManager : NetworkManager
         }
     }
 
+    public override void OnClientSceneChanged()
+    {
+        // Always send Ready but avoid Mirror's auto AddPlayer when we already have one.
+        if (NetworkClient.connection != null &&
+            NetworkClient.connection.isAuthenticated &&
+            !NetworkClient.ready)
+        {
+            NetworkClient.Ready();
+        }
+
+        var conn = NetworkClient.connection;
+        bool alreadyHasPlayer = NetworkClient.localPlayer != null ||
+                                (conn != null && conn.identity != null);
+        if (alreadyHasPlayer)
+            return;
+
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        // Only request AddPlayer in Lobby; in Game scenes the server swaps us in via OnServerReady
+        if (IsLobbyScene(sceneName))
+        {
+            NetworkClient.AddPlayer();
+        }
+    }
+
     private void SpawnOrReplaceGamePlayer(NetworkConnectionToClient conn)
     {
         if (GameCharacterPrefab == null)
@@ -274,7 +298,7 @@ public class CustomNetworkManager : NetworkManager
 
         if (conn.identity != null)
         {
-            NetworkServer.ReplacePlayerForConnection(conn, newPlayer, true);
+            NetworkServer.ReplacePlayerForConnection(conn, newPlayer, ReplacePlayerOptions.Destroy);
         }
         else
         {
