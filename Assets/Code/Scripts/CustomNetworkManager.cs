@@ -6,8 +6,14 @@ using System.Collections.Generic;
 
 public class CustomNetworkManager : NetworkManager
 {
-[SerializeField] private PlayerObjectController GamePlayerPrefab;
+    [SerializeField] private PlayerObjectController GamePlayerPrefab;
     public List<PlayerObjectController> GamePlayers { get; } = new List<PlayerObjectController>();
+    private readonly Dictionary<int, ulong> _connToSteam = new(); // server-only: connectionId -> steamId
+    private bool _spawnMgrResetInGameScene = false;
+
+    // Background scene preloading (server/host only)
+    private AsyncOperation _preloadedSceneOp;
+    private string _preloadedSceneName;
 
     // Add under your existing fields in CustomNetworkManager
     [SerializeField] private GameObject GameCharacterPrefab; // your in-game prefab
@@ -57,8 +63,18 @@ public class CustomNetworkManager : NetworkManager
     
     public override void OnServerAddPlayer(NetworkConnectionToClient conn)
     {
-        // LOBBY: custom spawn exactly like you had before
-        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Lobby")
+        string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        bool isLobbyScene = IsLobbyScene(activeScene);
+        bool isGameScene = IsGameScene(activeScene);
+
+        // Prevent double-spawns if Mirror invokes this while a player already exists for the connection
+        if (conn.identity != null)
+        {
+            Debug.LogWarning($"[Net] Connection {conn.connectionId} already has a player in scene '{activeScene}'. Skipping OnServerAddPlayer.");
+            return;
+        }
+
+        if (isLobbyScene)
         {
             PlayerObjectController instance = Instantiate(GamePlayerPrefab);
             instance.connectionID     = conn.connectionId;
@@ -67,9 +83,21 @@ public class CustomNetworkManager : NetworkManager
                 (CSteamID)SteamLobby.instance.currentLobbyID,
                 GamePlayers.Count);
 
+            // cache steamId for the later game-scene spawn
+            _connToSteam[conn.connectionId] = instance.playerSteamID;
+
             NetworkServer.AddPlayerForConnection(conn, instance.gameObject);
-            
+            return;
         }
+
+        if (isGameScene)
+        {
+            SpawnOrReplaceGamePlayer(conn);
+            return;
+        }
+
+        // Default fallback: if some unexpected scene, use base behaviour
+        base.OnServerAddPlayer(conn);
     }
     
     public override void OnStartClient()
@@ -118,6 +146,12 @@ public class CustomNetworkManager : NetworkManager
         }
     }
 
+    public override void OnServerDisconnect(NetworkConnectionToClient conn)
+    {
+        _connToSteam.Remove(conn.connectionId);
+        base.OnServerDisconnect(conn);
+    }
+
     public override void OnStopHost()
     {
         base.OnStopHost();
@@ -132,6 +166,8 @@ public class CustomNetworkManager : NetworkManager
         }
 
         GamePlayers.Clear();
+        _connToSteam.Clear();
+        _spawnMgrResetInGameScene = false;
 
         // host local UX (optional)
         if (LobbyController.instance != null)
@@ -143,47 +179,224 @@ public class CustomNetworkManager : NetworkManager
         public string reason; // e.g., "host_exit"
     }
     
+    private void Awake()
+    {
+        if (spawnPrefabs == null)
+            spawnPrefabs = new List<GameObject>();
+
+        // Ensure both prefabs are in spawnPrefabs so clients can spawn them.
+        // This is defensive; you can also wire it in the inspector.
+        if (GamePlayerPrefab != null && !spawnPrefabs.Contains(GamePlayerPrefab.gameObject))
+            spawnPrefabs.Add(GamePlayerPrefab.gameObject);
+
+        if (GameCharacterPrefab != null && !spawnPrefabs.Contains(GameCharacterPrefab))
+            spawnPrefabs.Add(GameCharacterPrefab);
+    }
+
     public override void OnServerSceneChanged(string sceneName)
     {
         base.OnServerSceneChanged(sceneName);
 
         try
         {
-            if (sceneName != "Terrain") return; // only swap in the Game scene
-
-            // 1) Find the SpawnPointManager in the newly loaded Game scene
-            var spawnMgr = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
-            if (spawnMgr != null) spawnMgr.ResetAll();
-
-            // 2) For each connected client, replace their lobby player with a game character at the chosen spawn
-            foreach (var kvp in NetworkServer.connections)
+            if (!IsGameScene(sceneName))
             {
-                var conn = kvp.Value;
-                if (conn == null) continue;
-
-                // Attempt to read SteamID from the existing lobby identity before replacing
-                ulong steamId = 0;
-                if (conn.identity != null)
-                {
-                    var lobbyComp = conn.identity.GetComponent<PlayerObjectController>();
-                    if (lobbyComp != null) steamId = lobbyComp.playerSteamID; // comes from your lobby player SyncVar
-                }
-
-                Vector3 pos = Vector3.zero;
-                Quaternion rot = Quaternion.identity;
-
-                if (spawnMgr != null)
-                {
-                    (pos, rot) = spawnMgr.GetSpawnFor(steamId);
-                }
-
-                var newPlayer = Instantiate(GameCharacterPrefab, pos, rot);
-                NetworkServer.ReplacePlayerForConnection(conn, newPlayer);
+                _spawnMgrResetInGameScene = false;
+                return;
             }
+
+            // Reset spawn manager once when entering the game scene.
+            var spawnMgr = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
+            if (spawnMgr != null)
+            {
+                spawnMgr.ResetAll();
+                _spawnMgrResetInGameScene = true;
+            }
+
+            // Actual replacement/add happens in OnServerReady after clients are ready.
         }
         catch (System.Exception ex)
         {
             Debug.LogException(ex, this);
         }
     }
+
+    public override void OnServerReady(NetworkConnectionToClient conn)
+    {
+        base.OnServerReady(conn);
+
+        if (IsGameScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name))
+        {
+            SpawnOrReplaceGamePlayer(conn);
+        }
+    }
+
+    public override void OnClientSceneChanged()
+    {
+        // Always send Ready but avoid Mirror's auto AddPlayer when we already have one.
+        if (NetworkClient.connection != null &&
+            NetworkClient.connection.isAuthenticated &&
+            !NetworkClient.ready)
+        {
+            NetworkClient.Ready();
+        }
+
+        var conn = NetworkClient.connection;
+        bool alreadyHasPlayer = NetworkClient.localPlayer != null ||
+                                (conn != null && conn.identity != null);
+        if (alreadyHasPlayer)
+            return;
+
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        // Only request AddPlayer in Lobby; in Game scenes the server swaps us in via OnServerReady
+        if (IsLobbyScene(sceneName))
+        {
+            NetworkClient.AddPlayer();
+        }
+    }
+
+    private void SpawnOrReplaceGamePlayer(NetworkConnectionToClient conn)
+    {
+        if (GameCharacterPrefab == null)
+        {
+            Debug.LogError("[Net] GameCharacterPrefab is not assigned on CustomNetworkManager.");
+            return;
+        }
+
+        var prefabIdentity = GameCharacterPrefab.GetComponent<NetworkIdentity>();
+
+        ulong steamId = 0;
+        if (_connToSteam.TryGetValue(conn.connectionId, out var cachedSteam))
+            steamId = cachedSteam;
+
+        if (conn.identity != null)
+        {
+            var lobbyComp = conn.identity.GetComponent<PlayerObjectController>();
+            if (lobbyComp != null) steamId = lobbyComp.playerSteamID;
+
+            // Already a game character? Skip extra replace.
+            if (prefabIdentity != null)
+            {
+                var currentIdentity = conn.identity.GetComponent<NetworkIdentity>();
+                if (currentIdentity != null && currentIdentity.assetId == prefabIdentity.assetId)
+                    return;
+            }
+        }
+
+        Vector3 pos = Vector3.zero;
+        Quaternion rot = Quaternion.identity;
+
+        var spawnMgr = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
+        if (spawnMgr != null)
+        {
+            // Only reset once per scene entry to avoid wiping usage while players join mid-game
+            if (!_spawnMgrResetInGameScene)
+            {
+                spawnMgr.ResetAll();
+                _spawnMgrResetInGameScene = true;
+            }
+            (pos, rot) = spawnMgr.GetSpawnFor(steamId);
+        }
+
+        var newPlayer = Instantiate(GameCharacterPrefab, pos, rot);
+
+        if (conn.identity != null)
+        {
+            NetworkServer.ReplacePlayerForConnection(conn, newPlayer, ReplacePlayerOptions.Destroy);
+        }
+        else
+        {
+            NetworkServer.AddPlayerForConnection(conn, newPlayer);
+        }
+    }
+
+    public void BeginPreloadGameScene(string sceneName)
+    {
+        // Only the server/host controls authoritative scene changes.
+        if (!NetworkServer.active)
+            return;
+
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
+
+        // Only support preloading for scenes considered "game scenes".
+        if (!IsGameScene(sceneName))
+            return;
+
+        // Don't start a second preload or interfere with Mirror's own load.
+        if (_preloadedSceneOp != null || loadingSceneAsync != null)
+            return;
+
+        // If we are already in that scene, no need to preload.
+        if (SceneManager.GetActiveScene().name == sceneName)
+            return;
+
+        Debug.Log($"[Net] Begin preloading scene '{sceneName}' in background (server/host).");
+        _preloadedSceneName = sceneName;
+        _preloadedSceneOp = SceneManager.LoadSceneAsync(sceneName);
+        if (_preloadedSceneOp != null)
+            _preloadedSceneOp.allowSceneActivation = false;
+    }
+
+    public override void ServerChangeScene(string newSceneName)
+    {
+        // If we have a matching preloaded scene operation, reuse it on the server.
+        if (_preloadedSceneOp != null && !string.IsNullOrWhiteSpace(newSceneName) && newSceneName == _preloadedSceneName)
+        {
+            if (NetworkServer.isLoadingScene && newSceneName == networkSceneName)
+            {
+                Debug.LogError($"Scene change is already in progress for {newSceneName}");
+                return;
+            }
+
+            // Throw error if called from client
+            // Allow changing scene while stopping the server
+            if (!NetworkServer.active && newSceneName != offlineScene)
+            {
+                Debug.LogError("ServerChangeScene can only be called on an active server.");
+                return;
+            }
+
+            // Debug.Log($"ServerChangeScene {newSceneName} (using preloaded op)");
+            NetworkServer.SetAllClientsNotReady();
+            networkSceneName = newSceneName;
+
+            // Let server prepare for scene change
+            OnServerChangeScene(newSceneName);
+
+            // set server flag to stop processing messages while changing scenes
+            // it will be re-enabled in FinishLoadScene.
+            NetworkServer.isLoadingScene = true;
+
+            // Hand our preloaded op to Mirror and allow it to activate now.
+            loadingSceneAsync = _preloadedSceneOp;
+            _preloadedSceneOp.allowSceneActivation = true;
+            _preloadedSceneOp = null;
+            _preloadedSceneName = null;
+
+            // ServerChangeScene can be called when stopping the server
+            // when this happens the server is not active so does not need to tell clients about the change
+            if (NetworkServer.active)
+            {
+                // notify all clients about the new scene
+                NetworkServer.SendToAll(new SceneMessage
+                {
+                    sceneName = newSceneName
+                });
+            }
+
+            startPositionIndex = 0;
+            startPositions.Clear();
+            return;
+        }
+
+        // No valid preload, fall back to default Mirror behaviour.
+        base.ServerChangeScene(newSceneName);
+    }
+
+    private static bool IsGameScene(string sceneName)
+        => sceneName == "GameExp1" || sceneName == "Terrain" || sceneName == "Game Exp" || sceneName == "Game";
+
+    private static bool IsLobbyScene(string sceneName)
+        => sceneName == "Lobby";
 }
