@@ -6,14 +6,14 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Handles simple melee combat:
 /// - Listens to Attack input (LMB or similar).
-/// - Plays a sword attack animation via Animator trigger.
+/// - Plays a sword attack animation.
 /// - Uses animation events to enable/disable the sword hitbox during the swing.
 /// - Applies damage to other PlayerHealth when the sword overlaps them.
-/// 
-/// This works in singleplayer and in Mirror:
-/// - Singleplayer: everything runs normally.
-/// - Mirror: only the local player processes input, and combat logic
-///   (hit detection & damage) runs only on the server.
+///
+/// Networking:
+/// - Input only on local player.
+/// - Combat logic (hit detection & damage) only on server.
+/// - Attack animation trigger is synced across clients via NetworkAnimator.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
 [RequireComponent(typeof(PlayerInput))]
@@ -32,6 +32,9 @@ public class PlayerCombatController : NetworkBehaviour
     [Header("References")]
     [Tooltip("Animator that plays character animations (on the Model GameObject).")]
     public Animator playerAnimator;
+
+    [Tooltip("Optional NetworkAnimator used to sync attack triggers over the network.")]
+    public NetworkAnimator playerNetworkAnimator;
 
     [Tooltip("Hitbox script attached to the sword object.")]
     public WeaponHitbox weaponHitbox;
@@ -60,9 +63,14 @@ public class PlayerCombatController : NetworkBehaviour
             playerHealth = GetComponent<PlayerHealth>();
         }
 
-        if (playerInput == null)
+        if (playerAnimator == null)
         {
-            Debug.LogError("[PlayerCombatController] PlayerInput is missing. Attack input will not work.");
+            playerAnimator = GetComponentInChildren<Animator>();
+        }
+
+        if (playerNetworkAnimator == null)
+        {
+            playerNetworkAnimator = GetComponentInChildren<NetworkAnimator>();
         }
 
         if (playerAnimator == null)
@@ -82,6 +90,11 @@ public class PlayerCombatController : NetworkBehaviour
         if (weaponHitbox == null)
         {
             Debug.LogWarning("[PlayerCombatController] WeaponHitbox is not assigned. No damage will be applied.");
+        }
+
+        if (playerInput == null)
+        {
+            Debug.LogError("[PlayerCombatController] PlayerInput is missing. Attack input will not work.");
         }
 
         // Try to bind Attack input action
@@ -141,7 +154,6 @@ public class PlayerCombatController : NetworkBehaviour
     {
         if (!NetworkServer.active && !NetworkClient.active)
         {
-            // No networking active -> singleplayer -> this instance is authoritative.
             return true;
         }
 
@@ -183,25 +195,48 @@ public class PlayerCombatController : NetworkBehaviour
         StartAttack();
     }
 
-    /// <summary>
-    /// Starts the local attack animation & cooldown.
-    /// Network visuals are not wired yet; this is local + server authoritative logic.
-    /// </summary>
     private void StartAttack()
     {
         isAttackInProgress = true;
         nextAllowedAttackTime = Time.time + attackCooldownSeconds;
 
-        if (playerAnimator != null && !string.IsNullOrEmpty(attackTriggerName))
+        if (!string.IsNullOrEmpty(attackTriggerName))
         {
-            playerAnimator.SetTrigger(attackTriggerName);
+            TrySetNetworkedTrigger(attackTriggerName);
         }
     }
 
     /// <summary>
-    /// Called from animation event via PlayerAnimationEventRelay when the sword
-    /// should start dealing damage (hitbox active window).
+    /// Uses NetworkAnimator.SetTrigger when networking is active, otherwise falls back to Animator.SetTrigger.
+    /// Only the local player should ever call this in a networked game.
     /// </summary>
+    private void TrySetNetworkedTrigger(string triggerName)
+    {
+        if (string.IsNullOrEmpty(triggerName))
+        {
+            return;
+        }
+
+        try
+        {
+            if (playerNetworkAnimator != null && NetworkClient.active && IsLocalAndAllowedForInput())
+            {
+                // Mirror docs: triggers are not auto-synced, use NetworkAnimator.SetTrigger instead.
+                playerNetworkAnimator.SetTrigger(triggerName);
+            }
+            else if (playerAnimator != null)
+            {
+                // Offline / fallback
+                playerAnimator.SetTrigger(triggerName);
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"[PlayerCombatController] Failed to set trigger '{triggerName}'. Exception: {exception.Message}");
+        }
+    }
+
+    // Called from animation events (via PlayerAnimationEventRelay)
     public void OnAnimationAttackHitboxStart()
     {
         if (!IsAuthoritativeForCombat())
@@ -217,9 +252,6 @@ public class PlayerCombatController : NetworkBehaviour
         weaponHitbox.EnableHitbox(this, attackDamageAmount);
     }
 
-    /// <summary>
-    /// Called from animation event when the sword should stop dealing damage.
-    /// </summary>
     public void OnAnimationAttackHitboxEnd()
     {
         if (!IsAuthoritativeForCombat())

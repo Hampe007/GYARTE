@@ -56,7 +56,10 @@ public class PlayerMovementController : NetworkBehaviour
     [Tooltip("True when the player is currently sprinting.")]
     public bool isPlayerSprinting;
 
+    private PlayerHealth playerHealth;
+
     private CharacterController playerCharacterController;
+    private PlayerAnimationController animationController;
     private PlayerInput playerInput;
     private PlayerStamina playerStamina;
 
@@ -73,15 +76,27 @@ public class PlayerMovementController : NetworkBehaviour
         playerCharacterController = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
         playerStamina = GetComponent<PlayerStamina>();
+        playerHealth = GetComponent<PlayerHealth>();
+        animationController = GetComponent<PlayerAnimationController>();
 
         if (playerCharacterController == null)
         {
             Debug.LogError("[PlayerMovementController] CharacterController is missing. Movement will not work.");
         }
 
+        if (animationController == null)
+        {
+            animationController = GetComponentInChildren<PlayerAnimationController>();
+        }
+
         if (playerInput == null)
         {
             Debug.LogError("[PlayerMovementController] PlayerInput is missing. Input will not work.");
+        }
+
+        if (playerHealth == null)
+        {
+            playerHealth = GetComponentInParent<PlayerHealth>();
         }
 
         // Try to cache input actions by name
@@ -117,6 +132,13 @@ public class PlayerMovementController : NetworkBehaviour
         // If networking is NOT active (editor singleplayer test), allow movement.
         if (NetworkClient.active && !isLocalPlayer)
         {
+            return;
+        }
+
+        // Stop if dead
+        if (playerHealth != null && playerHealth.IsPlayerDead())
+        {
+            playerCurrentVelocity = Vector3.zero;
             return;
         }
 
@@ -255,6 +277,12 @@ public class PlayerMovementController : NetworkBehaviour
         if (pressedJumpThisFrame && isPlayerGrounded && !isPlayerCrouching)
         {
             playerCurrentVelocity.y = jumpForce;
+
+            // Inform animation system that a jump started
+            if (animationController != null)
+            {
+                animationController.OnJumpStarted();
+            }
         }
 
         playerCurrentVelocity.y += gravityForce * Time.deltaTime;

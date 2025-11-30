@@ -27,6 +27,9 @@ public class PlayerAnimationController : NetworkBehaviour
     [Tooltip("Bool parameter that represents if the player is grounded.")]
     public string isGroundedParameterName = "IsGrounded";
 
+    [Tooltip("Trigger parameter used when the player starts a jump.")]
+    public string jumpTriggerParameterName = "JumpTrigger";
+
     [Tooltip("Bool parameter that represents if the player is crouching.")]
     public string isCrouchingParameterName = "IsCrouching";
 
@@ -170,4 +173,31 @@ public class PlayerAnimationController : NetworkBehaviour
             Debug.LogError($"[PlayerAnimationController] Failed to update vital animation parameters. Exception: {exception.Message}");
         }
     }
+
+    /// <summary>
+    /// Called by movement when the player successfully starts a jump.
+    /// Sets the JumpTrigger on the Animator.
+    /// </summary>
+    public void OnJumpStarted()
+    {
+        if (playerAnimator == null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(jumpTriggerParameterName))
+        {
+            return;
+        }
+
+        try
+        {
+            playerAnimator.SetTrigger(jumpTriggerParameterName);
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogError($"[PlayerAnimationController] Failed to set jump trigger. Exception: {exception.Message}");
+        }
+    }
+
 }

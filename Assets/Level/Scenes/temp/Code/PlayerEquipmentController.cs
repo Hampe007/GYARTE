@@ -5,9 +5,10 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles equipping and unequipping the sword.
-/// - Only the LOCAL player on each client is allowed to react to input.
+/// - Only the local player responds to input.
 /// - Uses animation triggers + events to move the sword between back and hand.
-/// - Sets IsSwordEquipped bool on the Animator so NetworkAnimator can sync it.
+/// - Sets IsSwordEquipped bool on the Animator.
+/// - Uses NetworkAnimator.SetTrigger so other clients see draw/sheath.
 /// </summary>
 public class PlayerEquipmentController : MonoBehaviour
 {
@@ -24,6 +25,9 @@ public class PlayerEquipmentController : MonoBehaviour
     [Header("Animator Setup")]
     [Tooltip("Animator that plays the character animations. Usually on the same GameObject as this script.")]
     public Animator animator;
+
+    [Tooltip("NetworkAnimator used to sync draw/sheath triggers over the network.")]
+    public NetworkAnimator networkAnimator;
 
     [Tooltip("Trigger parameter used to start the sword draw animation (Sword_Enter).")]
     public string swordDrawTriggerName = "SwordDrawTrigger";
@@ -44,7 +48,7 @@ public class PlayerEquipmentController : MonoBehaviour
 
     private PlayerInput playerInput;
     private InputAction equipSwordAction;
-    private NetworkIdentity networkIdentity; // to know if this is the local player
+    private NetworkIdentity networkIdentity;
 
     private void Awake()
     {
@@ -53,21 +57,24 @@ public class PlayerEquipmentController : MonoBehaviour
             animator = GetComponent<Animator>();
         }
 
+        if (networkAnimator == null)
+        {
+            networkAnimator = GetComponent<NetworkAnimator>() ?? GetComponentInParent<NetworkAnimator>() ?? GetComponentInChildren<NetworkAnimator>();
+        }
+
         if (animator == null)
         {
             Debug.LogError("[PlayerEquipmentController] Animator is missing. Please add this script to the same GameObject that has the Animator.");
         }
 
-        // PlayerInput lives on the Player root
         playerInput = GetComponentInParent<PlayerInput>();
         if (playerInput == null)
         {
             Debug.LogError("[PlayerEquipmentController] PlayerInput was not found in parent objects. Equip input will not work.");
         }
 
-        // NetworkIdentity also lives on the Player root
         networkIdentity = GetComponentInParent<NetworkIdentity>();
-        if (NetworkClient.active && networkIdentity == null)
+        if (Mirror.NetworkClient.active && networkIdentity == null)
         {
             Debug.LogWarning("[PlayerEquipmentController] NetworkIdentity not found on parent. Local/remote detection may fail in networked games.");
         }
@@ -87,7 +94,6 @@ public class PlayerEquipmentController : MonoBehaviour
             Debug.LogWarning("[PlayerEquipmentController] SwordInHandSocket is not assigned.");
         }
 
-        // Try to find the EquipSword action
         try
         {
             if (playerInput != null && playerInput.actions != null && !string.IsNullOrEmpty(equipSwordActionName))
@@ -100,7 +106,6 @@ public class PlayerEquipmentController : MonoBehaviour
             Debug.LogError($"[PlayerEquipmentController] Failed to find EquipSword input action with name '{equipSwordActionName}'. Exception: {exception.Message}");
         }
 
-        // At start, keep the sword on the back.
         AttachSwordToBack();
         UpdateAnimatorSwordEquippedFlag();
     }
@@ -123,16 +128,10 @@ public class PlayerEquipmentController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns true if this object should respond to input:
-    /// - Offline / singleplayer: true
-    /// - Mirror active: only for the local player object on this client
-    /// </summary>
     private bool IsLocalOrOffline()
     {
-        if (!NetworkClient.active)
+        if (!Mirror.NetworkClient.active)
         {
-            // No networking -> treat as singleplayer
             return true;
         }
 
@@ -146,7 +145,6 @@ public class PlayerEquipmentController : MonoBehaviour
 
     private void OnEquipSwordPerformed(InputAction.CallbackContext context)
     {
-        // Only the local player on this client may react to the input.
         if (!IsLocalOrOffline())
         {
             return;
@@ -159,19 +157,35 @@ public class PlayerEquipmentController : MonoBehaviour
 
         if (!isSwordEquipped)
         {
-            // Sword is currently on the back -> play draw animation
-            if (!string.IsNullOrEmpty(swordDrawTriggerName))
-            {
-                animator.SetTrigger(swordDrawTriggerName);
-            }
+            TrySetNetworkedTrigger(swordDrawTriggerName);
         }
         else
         {
-            // Sword is currently in the hand -> play sheath animation
-            if (!string.IsNullOrEmpty(swordSheathTriggerName))
+            TrySetNetworkedTrigger(swordSheathTriggerName);
+        }
+    }
+
+    private void TrySetNetworkedTrigger(string triggerName)
+    {
+        if (string.IsNullOrEmpty(triggerName))
+        {
+            return;
+        }
+
+        try
+        {
+            if (networkAnimator != null && Mirror.NetworkClient.active && IsLocalOrOffline())
             {
-                animator.SetTrigger(swordSheathTriggerName);
+                networkAnimator.SetTrigger(triggerName);
             }
+            else if (animator != null)
+            {
+                animator.SetTrigger(triggerName);
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"[PlayerEquipmentController] Failed to set trigger '{triggerName}'. Exception: {exception.Message}");
         }
     }
 
@@ -215,8 +229,7 @@ public class PlayerEquipmentController : MonoBehaviour
         animator.SetBool(isSwordEquippedBoolName, isSwordEquipped);
     }
 
-    // === Animation events ===
-
+    // Animation events
     public void OnSwordDraw()
     {
         AttachSwordToHand();
