@@ -52,8 +52,8 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             _initialCameraPriority = ownerCamera.Priority.Value;
             _capturedInitialPriority = true;
 
-            if (disableCameraForNonOwners)
-                ownerCamera.gameObject.SetActive(false);
+            // Start with all vcams disabled; local owner will enable in OnStartAuthority.
+            ownerCamera.gameObject.SetActive(false);
         }
     }
 
@@ -247,8 +247,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             if (_capturedInitialPriority)
                 ownerCamera.Priority.Value = _initialCameraPriority;
 
-            if (disableCameraForNonOwners)
-                ownerCamera.gameObject.SetActive(false);
+            ownerCamera.gameObject.SetActive(false);
 
             _cinemachineActive = false;
         }
