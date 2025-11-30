@@ -42,9 +42,11 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
     private bool _cinemachineActive;
     private int _initialCameraPriority;
     private bool _capturedInitialPriority;
+    private CinemachineVirtualCameraBase[] _allVirtualCameras;
 
     private void Awake()
     {
+        CacheVirtualCameras();
         EnsureOwnerCameraReference();
 
         _controller = GetComponent<CharacterController>();
@@ -55,7 +57,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             _capturedInitialPriority = true;
 
             // Start with all vcams disabled; local owner will enable in OnStartAuthority.
-            SetCameraActive(false);
+            DisableAllVirtualCameras();
         }
     }
 
@@ -63,7 +65,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
     {
         // Before ownership is known, keep the vcam disabled to avoid stealing the brain.
         if (ownerCamera == null) EnsureOwnerCameraReference();
-        SetCameraActive(false);
+        DisableAllVirtualCameras();
     }
 
     public override void OnStartClient()
@@ -239,11 +241,9 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         if (_capturedInitialPriority && priority <= _initialCameraPriority)
             priority = _initialCameraPriority + 1;
 
-        SetCameraActive(true);
+        SetCameraActive(true, priority);
         ownerCamera.Follow = cameraFollowTarget != null ? cameraFollowTarget : GetDefaultFollowTarget();
         ownerCamera.LookAt = cameraLookAtTarget != null ? cameraLookAtTarget : GetDefaultLookAtTarget();
-        ownerCamera.Priority.Value = priority;
-        ownerCamera.Prioritize();
 
         _cinemachineActive = true;
         
@@ -333,13 +333,20 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         _cinemachineActive = false;
     }
 
-    private void SetCameraActive(bool active)
+    private void SetCameraActive(bool active, int? activePriorityOverride = null)
     {
-        if (ownerCamera == null)
-            return;
+        EnsureOwnerCameraReference();
+        if (ownerCamera != null)
+        {
+            if (active && activePriorityOverride.HasValue)
+                ownerCamera.Priority.Value = activePriorityOverride.Value;
 
-        ownerCamera.enabled = active;
-        ownerCamera.gameObject.SetActive(active);
+            ownerCamera.enabled = active;
+            ownerCamera.gameObject.SetActive(active);
+        }
+
+        // Always hard-disable every other vcam in the prefab so only the owner can drive the brain.
+        DisableAllVirtualCameras(ownerCamera);
     }
 
     private void EnsureOwnerCameraReference()
@@ -349,5 +356,25 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
         // Find a CinemachineCamera in children (even if inactive).
         ownerCamera = GetComponentInChildren<CinemachineCamera>(true);
+    }
+
+    private void CacheVirtualCameras()
+    {
+        _allVirtualCameras = GetComponentsInChildren<CinemachineVirtualCameraBase>(true);
+    }
+
+    private void DisableAllVirtualCameras(CinemachineVirtualCameraBase except = null)
+    {
+        CacheVirtualCameras();
+        if (_allVirtualCameras == null) return;
+
+        foreach (var vcam in _allVirtualCameras)
+        {
+            if (vcam == null || vcam == except) continue;
+
+            vcam.Priority = int.MinValue;
+            vcam.enabled = false;
+            vcam.gameObject.SetActive(false);
+        }
     }
 }

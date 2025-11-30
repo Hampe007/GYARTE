@@ -5,25 +5,19 @@ using UnityEngine;
 /// <summary>
 /// Attached to the sword. Handles enabling/disabling its colliders as a hitbox
 /// and applying damage to other PlayerHealth when they overlap during an attack.
-/// 
-/// - Colliders are normally disabled.
-/// - During the attack window, PlayerCombatController.EnableHitbox(...) is called,
-///   which enables all child colliders.
-/// - OnTriggerEnter is used to detect hits and call TakeDamage() on PlayerHealth.
 /// </summary>
-public class WeaponHitbox : NetworkBehaviour
+public class WeaponHitbox : MonoBehaviour
 {
     [Header("Debug")]
-    [Tooltip("If true, debug messages will be logged when the hitbox hits something.")]
+    [Tooltip("If true, debug messages will be logged for hitbox events and collisions.")]
     public bool logDebugMessages = false;
 
     private Collider[] weaponColliders;
     private bool hitboxIsActive;
 
-    private PlayerCombatController currentAttacker;
+    [HideInInspector] public PlayerCombatController currentAttacker;
     private float currentAttackDamage;
 
-    // To avoid hitting the same target multiple times in one swing.
     private readonly HashSet<GameObject> alreadyDamagedObjects = new HashSet<GameObject>();
 
     private void Awake()
@@ -35,13 +29,10 @@ public class WeaponHitbox : NetworkBehaviour
             Debug.LogWarning("[WeaponHitbox] No colliders found in children. Hit detection will not work.");
         }
 
-        // Ensure hitbox is disabled at start.
+        // Ensure hitbox is disabled at start (colliders off)
         SetHitboxCollidersEnabled(false);
     }
 
-    /// <summary>
-    /// Enables the hitbox colliders for a specific attacker and damage value.
-    /// </summary>
     public void EnableHitbox(PlayerCombatController attacker, float attackDamage)
     {
         if (!IsAuthoritativeForCombat())
@@ -58,13 +49,10 @@ public class WeaponHitbox : NetworkBehaviour
 
         if (logDebugMessages)
         {
-            Debug.Log("[WeaponHitbox] Hitbox enabled.");
+            Debug.Log("[WeaponHitbox] Hitbox ENABLED.");
         }
     }
 
-    /// <summary>
-    /// Disables the hitbox colliders and clears state.
-    /// </summary>
     public void DisableHitbox()
     {
         if (!IsAuthoritativeForCombat())
@@ -81,7 +69,7 @@ public class WeaponHitbox : NetworkBehaviour
 
         if (logDebugMessages)
         {
-            Debug.Log("[WeaponHitbox] Hitbox disabled.");
+            Debug.Log("[WeaponHitbox] Hitbox DISABLED.");
         }
     }
 
@@ -92,31 +80,28 @@ public class WeaponHitbox : NetworkBehaviour
             return;
         }
 
-        foreach (Collider colliderComponent in weaponColliders)
+        foreach (Collider c in weaponColliders)
         {
-            if (colliderComponent != null)
+            if (c != null)
             {
-                colliderComponent.enabled = enabled;
+                c.enabled = enabled;
             }
         }
     }
 
-    /// <summary>
-    /// Singleplayer OR server-side authority check.
-    /// - Singleplayer (no Mirror active): returns true.
-    /// - Mirror: only the server processes hit detection & damage.
-    /// </summary>
     private bool IsAuthoritativeForCombat()
     {
+        // Singleplayer: no networking active -> do the logic
         if (!NetworkServer.active && !NetworkClient.active)
         {
             return true;
         }
 
-        return isServer;
+        // Network game: only the server applies damage
+        return NetworkServer.active;
     }
 
-    private void OnTriggerEnter(Collider otherCollider)
+    private void OnTriggerEnter(Collider other)
     {
         if (!hitboxIsActive)
         {
@@ -133,23 +118,37 @@ public class WeaponHitbox : NetworkBehaviour
             return;
         }
 
-        // Find PlayerHealth on the object we hit (or its parents).
-        PlayerHealth targetHealth = otherCollider.GetComponentInParent<PlayerHealth>();
+        if (logDebugMessages)
+        {
+            Debug.Log($"[WeaponHitbox] OnTriggerEnter with {other.gameObject.name}");
+        }
+
+        PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
         if (targetHealth == null)
         {
-            // Not a player or no health -> ignore.
+            if (logDebugMessages)
+            {
+                Debug.Log("[WeaponHitbox] Collider has no PlayerHealth in parents, ignoring.");
+            }
             return;
         }
 
-        // Do not hit ourselves.
+        // Don't hit ourselves
         if (targetHealth.gameObject == currentAttacker.playerHealth.gameObject)
         {
+            if (logDebugMessages)
+            {
+                Debug.Log("[WeaponHitbox] Ignoring self hit.");
+            }
             return;
         }
 
-        // Avoid multiple hits on the same target for one swing.
         if (alreadyDamagedObjects.Contains(targetHealth.gameObject))
         {
+            if (logDebugMessages)
+            {
+                Debug.Log("[WeaponHitbox] Target already damaged in this swing, ignoring.");
+            }
             return;
         }
 
@@ -157,7 +156,7 @@ public class WeaponHitbox : NetworkBehaviour
 
         if (logDebugMessages)
         {
-            Debug.Log($"[WeaponHitbox] {currentAttacker.gameObject.name} hit {targetHealth.gameObject.name} for {currentAttackDamage} damage.");
+            Debug.Log($"[WeaponHitbox] Hitting {targetHealth.gameObject.name} for {currentAttackDamage} damage.");
         }
 
         targetHealth.TakeDamage(currentAttackDamage);

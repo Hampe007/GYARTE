@@ -1,12 +1,13 @@
 using System;
+using Mirror;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles equipping and unequipping the sword.
-/// - Listens to an EquipSword input action.
-/// - Triggers sword draw/sheath animations.
-/// - Receives animation events to move the sword between back and hand.
+/// - Only the LOCAL player on each client is allowed to react to input.
+/// - Uses animation triggers + events to move the sword between back and hand.
+/// - Sets IsSwordEquipped bool on the Animator so NetworkAnimator can sync it.
 /// </summary>
 public class PlayerEquipmentController : MonoBehaviour
 {
@@ -43,6 +44,7 @@ public class PlayerEquipmentController : MonoBehaviour
 
     private PlayerInput playerInput;
     private InputAction equipSwordAction;
+    private NetworkIdentity networkIdentity; // to know if this is the local player
 
     private void Awake()
     {
@@ -56,11 +58,18 @@ public class PlayerEquipmentController : MonoBehaviour
             Debug.LogError("[PlayerEquipmentController] Animator is missing. Please add this script to the same GameObject that has the Animator.");
         }
 
-        // We expect PlayerInput to be on a parent object (the Player root).
+        // PlayerInput lives on the Player root
         playerInput = GetComponentInParent<PlayerInput>();
         if (playerInput == null)
         {
             Debug.LogError("[PlayerEquipmentController] PlayerInput was not found in parent objects. Equip input will not work.");
+        }
+
+        // NetworkIdentity also lives on the Player root
+        networkIdentity = GetComponentInParent<NetworkIdentity>();
+        if (NetworkClient.active && networkIdentity == null)
+        {
+            Debug.LogWarning("[PlayerEquipmentController] NetworkIdentity not found on parent. Local/remote detection may fail in networked games.");
         }
 
         if (swordObject == null)
@@ -114,9 +123,35 @@ public class PlayerEquipmentController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Returns true if this object should respond to input:
+    /// - Offline / singleplayer: true
+    /// - Mirror active: only for the local player object on this client
+    /// </summary>
+    private bool IsLocalOrOffline()
+    {
+        if (!NetworkClient.active)
+        {
+            // No networking -> treat as singleplayer
+            return true;
+        }
+
+        if (networkIdentity == null)
+        {
+            return false;
+        }
+
+        return networkIdentity.isLocalPlayer;
+    }
+
     private void OnEquipSwordPerformed(InputAction.CallbackContext context)
     {
-        // When the EquipSword button is pressed, we toggle between draw and sheath.
+        // Only the local player on this client may react to the input.
+        if (!IsLocalOrOffline())
+        {
+            return;
+        }
+
         if (animator == null)
         {
             return;
@@ -140,9 +175,6 @@ public class PlayerEquipmentController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Attaches the sword to the back socket.
-    /// </summary>
     public void AttachSwordToBack()
     {
         if (swordObject == null || swordOnBackSocket == null)
@@ -158,9 +190,6 @@ public class PlayerEquipmentController : MonoBehaviour
         UpdateAnimatorSwordEquippedFlag();
     }
 
-    /// <summary>
-    /// Attaches the sword to the hand socket.
-    /// </summary>
     public void AttachSwordToHand()
     {
         if (swordObject == null || swordInHandSocket == null)
@@ -188,17 +217,11 @@ public class PlayerEquipmentController : MonoBehaviour
 
     // === Animation events ===
 
-    /// <summary>
-    /// Animation event: called from Sword_Enter animation when the sword should appear in the hand.
-    /// </summary>
     public void OnSwordDraw()
     {
         AttachSwordToHand();
     }
 
-    /// <summary>
-    /// Animation event: called from Sword_Exit animation when the sword should go back to the back.
-    /// </summary>
     public void OnSwordSheath()
     {
         AttachSwordToBack();
