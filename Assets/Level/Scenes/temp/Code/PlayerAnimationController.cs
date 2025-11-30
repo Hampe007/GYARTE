@@ -1,3 +1,4 @@
+using System;
 using Mirror;
 using UnityEngine;
 
@@ -19,6 +20,10 @@ public class PlayerAnimationController : NetworkBehaviour
 
     [Tooltip("Animator that plays the character animations.")]
     public Animator playerAnimator;
+
+    private NetworkAnimator networkAnimator;
+    
+    private NetworkIdentity networkIdentity;
 
     [Header("Animator Parameter Names")]
     [Tooltip("Float parameter that represents normalized movement speed (0 to 1).")]
@@ -63,6 +68,16 @@ public class PlayerAnimationController : NetworkBehaviour
         if (playerAnimator == null)
         {
             playerAnimator = GetComponentInChildren<Animator>();
+        }
+
+        if (networkAnimator == null)
+        {
+            networkAnimator = GetComponent<NetworkAnimator>() ?? GetComponentInParent<NetworkAnimator>() ?? GetComponentInChildren<NetworkAnimator>();
+        }
+
+        if (networkIdentity == null)
+        {
+            networkIdentity = GetComponent<NetworkIdentity>() ?? GetComponentInParent<NetworkIdentity>();
         }
 
         if (playerAnimator == null)
@@ -192,12 +207,38 @@ public class PlayerAnimationController : NetworkBehaviour
 
         try
         {
-            playerAnimator.SetTrigger(jumpTriggerParameterName);
+            // If we are in a networked game and this is the local player,
+            // use NetworkAnimator so all clients see the jump.
+            if (networkAnimator != null && NetworkClient.active && IsLocalOrOffline())
+            {
+                networkAnimator.SetTrigger(jumpTriggerParameterName);
+            }
+            else
+            {
+                // Offline / fallback
+                playerAnimator.SetTrigger(jumpTriggerParameterName);
+            }
         }
-        catch (System.Exception exception)
+        catch (Exception exception)
         {
-            Debug.LogError($"[PlayerAnimationController] Failed to set jump trigger. Exception: {exception.Message}");
+            Debug.LogError($"[PlayerAnimationController] Failed to set jump trigger '{jumpTriggerParameterName}'. Exception: {exception.Message}");
         }
+    }
+
+    private bool IsLocalOrOffline()
+    {
+        if (!NetworkClient.active)
+        {
+            // No networking -> treat as singleplayer
+            return true;
+        }
+
+        if (networkIdentity == null)
+        {
+            return false;
+        }
+
+        return networkIdentity.isLocalPlayer;
     }
 
 }

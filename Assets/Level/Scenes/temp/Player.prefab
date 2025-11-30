@@ -298,6 +298,7 @@ GameObject:
   - component: {fileID: 1413803670251952853}
   - component: {fileID: 185563298628298021}
   - component: {fileID: 8043410957707277202}
+  - component: {fileID: 3168835484048204760}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -384,7 +385,7 @@ MonoBehaviour:
   unreliableRedundancy: 0
   baselineIsDelta: 1
   debugLog: 0
-  useFixedUpdate: 0
+  useFixedUpdate: 1
   target: {fileID: 3716491057529778052}
   bufferSizeLimit: 64
   sendRate: 30
@@ -468,6 +469,9 @@ MonoBehaviour:
   gravityForce: -9.82
   rotationSpeed: 10
   playerCameraTransform: {fileID: 0}
+  lockMovementWhenTired: 1
+  tiredLockMinimumDurationSeconds: 1.5
+  isMovementLockedByTired: 1
   playerCurrentVelocity: {x: 0, y: 0, z: 0}
   isPlayerGrounded: 0
   isWalkModifierActive: 0
@@ -509,9 +513,9 @@ MonoBehaviour:
   maxStamina: 100
   currentStamina: 100
   sprintStaminaDrainPerSecond: 15
-  staminaRegenerationPerSecond: 10
+  staminaRegenerationPerSecond: 5
   lowStaminaThreshold: 20
-  minimumStaminaToStartSprinting: 10
+  minimumStaminaToStartSprinting: 20
   isStaminaLow: 0
   isConsumingStaminaBySprinting: 0
 --- !u!114 &1413803670251952853
@@ -535,6 +539,7 @@ MonoBehaviour:
   playerAnimator: {fileID: 8688996240528907569}
   moveSpeedParameterName: MoveSpeed
   isGroundedParameterName: IsGrounded
+  jumpTriggerParameterName: JumpTrigger
   isCrouchingParameterName: IsCrouching
   isSprintingParameterName: IsSprinting
   isDeadParameterName: IsDead
@@ -558,6 +563,7 @@ MonoBehaviour:
   attackCooldownSeconds: 0.6
   attackTriggerName: AttackTrigger
   playerAnimator: {fileID: 8688996240528907569}
+  playerNetworkAnimator: {fileID: 0}
   weaponHitbox: {fileID: 2920146389214991955}
   equipmentController: {fileID: 8800754305519974164}
   playerHealth: {fileID: 3837656700368087630}
@@ -579,6 +585,23 @@ MonoBehaviour:
   syncInterval: 0
   freeLookCameraObject: {fileID: 6897409700121952142}
   cameraFollowTarget: {fileID: 636609613594898968}
+--- !u!114 &3168835484048204760
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7573525158348219235}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af5cda19242e42346861fa42bfb37603, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  syncDirection: 0
+  syncMode: 0
+  syncInterval: 0
+  playerHealth: {fileID: 3837656700368087630}
+  playerStamina: {fileID: 3357006895431430442}
 --- !u!1 &8406851463675081409
 GameObject:
   m_ObjectHideFlags: 0
@@ -729,10 +752,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b12212cd5af7bd489e604a73b350c75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  syncDirection: 0
-  syncMode: 0
-  syncInterval: 0
   logDebugMessages: 1
+  currentAttacker: {fileID: 0}
 --- !u!65 &1299442504346882076
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -861,6 +882,7 @@ MonoBehaviour:
   swordOnBackSocket: {fileID: 7986411607145811091}
   swordInHandSocket: {fileID: 2791084490913575902}
   animator: {fileID: 8688996240528907569}
+  networkAnimator: {fileID: 0}
   swordDrawTriggerName: SwordDrawTrigger
   swordSheathTriggerName: SwordSheathTrigger
   isSwordEquippedBoolName: IsSwordEquipped

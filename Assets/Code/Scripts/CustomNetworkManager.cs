@@ -6,10 +6,14 @@ using System.Collections.Generic;
 
 public class CustomNetworkManager : NetworkManager
 {
-[SerializeField] private PlayerObjectController GamePlayerPrefab;
+    [SerializeField] private PlayerObjectController GamePlayerPrefab;
     public List<PlayerObjectController> GamePlayers { get; } = new List<PlayerObjectController>();
     private readonly Dictionary<int, ulong> _connToSteam = new(); // server-only: connectionId -> steamId
     private bool _spawnMgrResetInGameScene = false;
+
+    // Background scene preloading (server/host only)
+    private AsyncOperation _preloadedSceneOp;
+    private string _preloadedSceneName;
 
     // Add under your existing fields in CustomNetworkManager
     [SerializeField] private GameObject GameCharacterPrefab; // your in-game prefab
@@ -304,6 +308,90 @@ public class CustomNetworkManager : NetworkManager
         {
             NetworkServer.AddPlayerForConnection(conn, newPlayer);
         }
+    }
+
+    public void BeginPreloadGameScene(string sceneName)
+    {
+        // Only the server/host controls authoritative scene changes.
+        if (!NetworkServer.active)
+            return;
+
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
+
+        // Only support preloading for scenes considered "game scenes".
+        if (!IsGameScene(sceneName))
+            return;
+
+        // Don't start a second preload or interfere with Mirror's own load.
+        if (_preloadedSceneOp != null || loadingSceneAsync != null)
+            return;
+
+        // If we are already in that scene, no need to preload.
+        if (SceneManager.GetActiveScene().name == sceneName)
+            return;
+
+        Debug.Log($"[Net] Begin preloading scene '{sceneName}' in background (server/host).");
+        _preloadedSceneName = sceneName;
+        _preloadedSceneOp = SceneManager.LoadSceneAsync(sceneName);
+        if (_preloadedSceneOp != null)
+            _preloadedSceneOp.allowSceneActivation = false;
+    }
+
+    public override void ServerChangeScene(string newSceneName)
+    {
+        // If we have a matching preloaded scene operation, reuse it on the server.
+        if (_preloadedSceneOp != null && !string.IsNullOrWhiteSpace(newSceneName) && newSceneName == _preloadedSceneName)
+        {
+            if (NetworkServer.isLoadingScene && newSceneName == networkSceneName)
+            {
+                Debug.LogError($"Scene change is already in progress for {newSceneName}");
+                return;
+            }
+
+            // Throw error if called from client
+            // Allow changing scene while stopping the server
+            if (!NetworkServer.active && newSceneName != offlineScene)
+            {
+                Debug.LogError("ServerChangeScene can only be called on an active server.");
+                return;
+            }
+
+            // Debug.Log($"ServerChangeScene {newSceneName} (using preloaded op)");
+            NetworkServer.SetAllClientsNotReady();
+            networkSceneName = newSceneName;
+
+            // Let server prepare for scene change
+            OnServerChangeScene(newSceneName);
+
+            // set server flag to stop processing messages while changing scenes
+            // it will be re-enabled in FinishLoadScene.
+            NetworkServer.isLoadingScene = true;
+
+            // Hand our preloaded op to Mirror and allow it to activate now.
+            loadingSceneAsync = _preloadedSceneOp;
+            _preloadedSceneOp.allowSceneActivation = true;
+            _preloadedSceneOp = null;
+            _preloadedSceneName = null;
+
+            // ServerChangeScene can be called when stopping the server
+            // when this happens the server is not active so does not need to tell clients about the change
+            if (NetworkServer.active)
+            {
+                // notify all clients about the new scene
+                NetworkServer.SendToAll(new SceneMessage
+                {
+                    sceneName = newSceneName
+                });
+            }
+
+            startPositionIndex = 0;
+            startPositions.Clear();
+            return;
+        }
+
+        // No valid preload, fall back to default Mirror behaviour.
+        base.ServerChangeScene(newSceneName);
     }
 
     private static bool IsGameScene(string sceneName)

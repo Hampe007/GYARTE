@@ -8,6 +8,7 @@ using TMPro;
 
 public class LobbyController : MonoBehaviour
 {
+    private const string GameSceneName = "GameExp1";
 
     public static LobbyController instance;
     
@@ -24,6 +25,7 @@ public class LobbyController : MonoBehaviour
     public bool playerItemCreated = false;
     private List<PlayerListItem> _playerListItems = new List<PlayerListItem>();
     public PlayerObjectController localPlayerController;
+    private bool _gameScenePreloadStarted = false;
     
     // Ready to begin
     public Button startGameButton;
@@ -210,7 +212,19 @@ public class LobbyController : MonoBehaviour
             }
         }
 
-        bool shouldEnable = allReadyToBegin && localPlayerController != null && localPlayerController.playerIDNumber == 1;
+        bool isHostLocalPlayer = localPlayerController != null && localPlayerController.playerIDNumber == 1;
+        bool shouldEnable = allReadyToBegin && isHostLocalPlayer;
+
+        // When everyone is ready and we are the host, begin preloading the game scene in the background.
+        if (allReadyToBegin && isHostLocalPlayer && !_gameScenePreloadStarted)
+        {
+            _gameScenePreloadStarted = true;
+            if (NetworkServer.active && NetworkManager != null)
+            {
+                NetworkManager.BeginPreloadGameScene(GameSceneName);
+                Debug.Log($"[Lobby] All players ready. Preloading game scene '{GameSceneName}' in background.");
+            }
+        }
 
         if (startGameButton != null)
         {
@@ -268,8 +282,8 @@ public class LobbyController : MonoBehaviour
         // Prevent double-clicks while the scene change message is in-flight
         if (startGameButton != null) startGameButton.interactable = false;
 
-        // Kick off the game scene (ensure "GameExp1" is in Build Settings)
-        const string sceneName = "GameExp1";
+        // Kick off the game scene (ensure it is in Build Settings)
+        const string sceneName = GameSceneName;
         Debug.Log($"[Game] ServerChangeScene('{sceneName}')");
         NetworkManager.ServerChangeScene(sceneName);         // Mirror syncs all clients to this scene
     }
