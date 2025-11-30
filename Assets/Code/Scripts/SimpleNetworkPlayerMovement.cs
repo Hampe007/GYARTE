@@ -53,7 +53,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             _capturedInitialPriority = true;
 
             // Start with all vcams disabled; local owner will enable in OnStartAuthority.
-            ownerCamera.gameObject.SetActive(false);
+            SetCameraActive(false);
         }
     }
 
@@ -227,7 +227,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         if (_capturedInitialPriority && priority <= _initialCameraPriority)
             priority = _initialCameraPriority + 1;
 
-        ownerCamera.gameObject.SetActive(true);
+        SetCameraActive(true);
         ownerCamera.Follow = cameraFollowTarget != null ? cameraFollowTarget : GetDefaultFollowTarget();
         ownerCamera.LookAt = cameraLookAtTarget != null ? cameraLookAtTarget : GetDefaultLookAtTarget();
         ownerCamera.Priority.Value = priority;
@@ -247,7 +247,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             if (_capturedInitialPriority)
                 ownerCamera.Priority.Value = _initialCameraPriority;
 
-            ownerCamera.gameObject.SetActive(false);
+            SetCameraActive(false);
 
             _cinemachineActive = false;
         }
@@ -313,10 +313,20 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             if (_capturedInitialPriority)
                 ownerCamera.Priority.Value = _initialCameraPriority;
 
-            ownerCamera.gameObject.SetActive(false);
+            ownerCamera.Priority.Value = int.MinValue; // make sure it never wins
+            SetCameraActive(false);
         }
 
         DetachFallbackCamera();
         _cinemachineActive = false;
+    }
+
+    private void SetCameraActive(bool active)
+    {
+        if (ownerCamera == null)
+            return;
+
+        ownerCamera.enabled = active;
+        ownerCamera.gameObject.SetActive(active);
     }
 }
