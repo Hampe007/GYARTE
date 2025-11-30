@@ -354,56 +354,66 @@ public partial class TerrainPrefabPainter : EditorWindow
                         }
 
                         // Circle falloff mask
+                        // Unified circle mask logic (exclusion OR inclusion)
                         float densityFactor = 1f;
+                        bool insideAnyCircle = false;
 
-                        if (hasGrassCircles)
+                        if (globalCircles != null && globalCircles.Count > 0)
                         {
-                            float blockFactor = 0f;
+                            Vector2 p = new Vector2(wx, wz);
 
                             for (int c = 0; c < globalCircles.Count; c++)
                             {
                                 var circle = globalCircles[c];
                                 if (!circle) continue;
 
-                                float r = circle.radius;
-                                Vector2 p = new Vector2(wx, wz);
                                 Vector2 cc = new Vector2(circle.transform.position.x, circle.transform.position.z);
-
                                 float dist = Vector2.Distance(p, cc);
 
-                                if (dist >= r)
-                                    continue;
-
-                                if (grassCircleFalloff <= 0f)
+                                if (dist <= circle.radius)
                                 {
-                                    blockFactor = 1f;
-                                    break;
-                                }
+                                    insideAnyCircle = true;
 
-                                float inner = Mathf.Max(0f, r - grassCircleFalloff);
-
-                                float bf;
-                                if (dist <= inner)
-                                {
-                                    bf = 1f;
+                                    // EXCLUSION
+                                    if (useGrassCircleExclusion)
+                                    {
+                                        if (grassCircleFalloff <= 0f)
+                                        {
+                                            densityFactor = 0f;
+                                        }
+                                        else
+                                        {
+                                            float inner = Mathf.Max(0f, circle.radius - grassCircleFalloff);
+                                            if (dist <= inner)
+                                            {
+                                                densityFactor = 0f;
+                                            }
+                                            else
+                                            {
+                                                float t = (dist - inner) / Mathf.Max(0.001f, grassCircleFalloff);
+                                                densityFactor = Mathf.Min(densityFactor, t);
+                                            }
+                                        }
+                                    }
                                 }
-                                else
-                                {
-                                    float t = (dist - inner) / Mathf.Max(0.001f, grassCircleFalloff);
-                                    bf = 1f - Mathf.Clamp01(t);
-                                }
-
-                                if (bf > blockFactor)
-                                    blockFactor = bf;
                             }
 
-                            if (blockFactor >= 1f)
+                            // INCLUSION (when exclusion is OFF)
+                            if (!useGrassCircleExclusion)
+                            {
+                                if (!insideAnyCircle)
+                                {
+                                    output[y, x] = addMode ? current[y, x] : 0;
+                                    continue;
+                                }
+                            }
+
+                            // If exclusion killed density
+                            if (densityFactor <= 0f)
                             {
                                 output[y, x] = addMode ? current[y, x] : 0;
                                 continue;
                             }
-
-                            densityFactor = 1f - blockFactor;
                         }
 
                         affectedCells++;
