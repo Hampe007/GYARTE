@@ -8,7 +8,7 @@ using TMPro;
 
 public class LobbyController : MonoBehaviour
 {
-    private const string GameSceneName = "GameExp1";
+    private const string GameSceneName = "Temp Terrain";
 
     public static LobbyController instance;
     

@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using UnityEditorInternal;
@@ -1259,3 +1260,4 @@ public partial class TerrainPrefabPainter
 
     #endregion
 }
+#endif
