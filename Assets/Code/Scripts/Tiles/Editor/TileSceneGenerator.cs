@@ -64,10 +64,10 @@ public sealed class TileSceneGenerator : EditorWindow
     // Copy Channels
     [Header("Copy Channels")]
     [SerializeField] private bool copyHeights = true;
-    [SerializeField] private bool copyAlphamaps = false;
-    [SerializeField] private bool copyDetails = false;
-    [SerializeField] private bool copyTrees = false;
-    [SerializeField] private bool copyProps = false;
+    [SerializeField] private bool copyAlphamaps = true;
+    [SerializeField] private bool copyDetails = true;
+    [SerializeField] private bool copyTrees = true;
+    [SerializeField] private bool copyProps = true;
 
     // Reslice Options
     [Header("Reslice Options")]
@@ -195,6 +195,32 @@ public sealed class TileSceneGenerator : EditorWindow
             new GUIContent("Copy Props (TileProp)", "Copies GameObjects marked with TileProp from the master scene into each tile scene."),
             copyProps
         );
+        
+        EditorGUILayout.HelpBox(
+            "Enabling splats, details, trees, and props is far heavier than copying heights only. " +
+            "If you just need to validate slicing, run a fast pass first, then switch back to full fidelity before final export.",
+            MessageType.Info);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Preset: Fast (heights only)", GUILayout.Width(200f)))
+            {
+                copyHeights = true;
+                copyAlphamaps = false;
+                copyDetails = false;
+                copyTrees = false;
+                copyProps = false;
+            }
+
+            if (GUILayout.Button("Preset: Full fidelity (all channels)", GUILayout.Width(240f)))
+            {
+                copyHeights = true;
+                copyAlphamaps = true;
+                copyDetails = true;
+                copyTrees = true;
+                copyProps = true;
+            }
+        }
         
         // Preview all candidate terrains using the exact rules used by slicing
         if (!_isRunning)
@@ -1109,6 +1135,23 @@ public sealed class TileSceneGenerator : EditorWindow
         h = Mathf.Max(1, h);
         var splats = _srcTD.GetAlphamaps(aX, aY, w, h);
         td.SetAlphamaps(0, 0, splats);
+    }
+    else if (layers != null && layers.Length > 0)
+    {
+        // Ensure tiles still render with the base layer even when splatmaps are skipped.
+        int aTileRes = Mathf.Max(1, Mathf.RoundToInt(_srcTD.alphamapResolution / (float)tilesX));
+        td.alphamapResolution = aTileRes;
+
+        var fallback = new float[aTileRes, aTileRes, layers.Length];
+        for (int x = 0; x < aTileRes; x++)
+        {
+            for (int y = 0; y < aTileRes; y++)
+            {
+                fallback[x, y, 0] = 1f;
+            }
+        }
+
+        td.SetAlphamaps(0, 0, fallback);
     }
 
     if (copyDetails && detailLayerCount > 0)

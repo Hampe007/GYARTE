@@ -31,6 +31,8 @@ public class TileStreamCoordinator : NetworkBehaviour
     private Coroutine clientApplyCoroutine;
     
     public bool offlineStandalone = true;
+    
+    [Tooltip("Transform to follow in offline streaming mode; defaults to player or main camera when unset.")]
     public Transform offlineTarget;
     private Coroutine offlineLoop;
 
@@ -79,8 +81,8 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void Awake()
     {
+        AutoAssignReferences();
         UpdateRadiusCache();
-        CacheMasterTerrainScene();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
         masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
     }
@@ -261,6 +263,8 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield return null;
             scene = SceneManager.GetSceneByPath(path);
         }
+        
+        WireTerrainNeighbors(path);
 
         NetworkServer.SpawnObjects();
         IncrementServerLoadsThisFrame();
@@ -278,6 +282,8 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             Debug.Log($"[TileStream] Server unloading {path}");
         }
+        
+        UnwireNeighbors(path);
 
         var op = SceneManager.UnloadSceneAsync(scene);
         if (op == null)
@@ -290,6 +296,8 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             yield return null;
         }
+        
+        
     }
 
     [ClientRpc(channel = Channels.Reliable)]
@@ -376,6 +384,8 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield return null;
         }
         
+        WireTerrainNeighbors(path);
+        
         IncrementClientLoadsThisFrame();
     }
 
@@ -391,11 +401,13 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             yield break;
         }
-
+        
         if (logActions)
         {
             Debug.Log($"[TileStream] Client unloading {path}");
         }
+        
+        UnwireNeighbors(path);
 
         var op = SceneManager.UnloadSceneAsync(scene);
         if (op == null)
@@ -492,6 +504,8 @@ public class TileStreamCoordinator : NetworkBehaviour
     
     private void OnEnable()
     {
+        AutoAssignReferences();
+        
         // Offline mode: run when Mirror is not active
         if (offlineStandalone && !NetworkServer.active && !NetworkClient.active && index != null)
         {
@@ -562,6 +576,59 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     }
 
+    private void AutoAssignReferences()
+    {
+        if (player == null)
+        {
+            player = FindPlayerTransform();
+        }
+
+        if (masterTerrain == null)
+        {
+            masterTerrain = FindMasterTerrain();
+        }
+
+        CacheMasterTerrainScene();
+    }
+
+    private Transform FindPlayerTransform()
+    {
+        if (NetworkClient.active && NetworkClient.localPlayer != null)
+        {
+            return NetworkClient.localPlayer.transform;
+        }
+
+        if (NetworkServer.active)
+        {
+            foreach (var conn in NetworkServer.connections.Values)
+            {
+                if (conn?.identity != null)
+                {
+                    return conn.identity.transform;
+                }
+            }
+        }
+
+        var taggedPlayer = GameObject.FindGameObjectWithTag("Player");
+        if (taggedPlayer != null)
+        {
+            return taggedPlayer.transform;
+        }
+
+        var identity = FindObjectsOfType<NetworkIdentity>().FirstOrDefault(i => i != null && i.isLocalPlayer);
+        return identity != null ? identity.transform : null;
+    }
+
+    private Terrain FindMasterTerrain()
+    {
+        if (Terrain.activeTerrain != null)
+        {
+            return Terrain.activeTerrain;
+        }
+
+        return FindObjectsOfType<Terrain>().FirstOrDefault();
+    }
+    
     private void CacheMasterTerrainScene()
     {
         if (masterTerrain == null)
@@ -590,8 +657,25 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             var scene = SceneManager.GetSceneByPath(masterTerrainScenePath);
             // Avoid unloading the active scene; assume master terrain lives in a dedicated additive scene
-            if (scene.IsValid() && scene.isLoaded && scene != SceneManager.GetActiveScene())
+            if (!scene.IsValid() || !scene.isLoaded)
             {
+                masterSceneUnloaded = true;
+            }
+            else
+            {
+                Scene previousActive = SceneManager.GetActiveScene();
+                bool switchedActive = false;
+
+                if (scene == previousActive)
+                {
+                    Scene tempActive = GetOrCreateTemporaryActiveScene();
+                    if (tempActive.IsValid())
+                    {
+                        SceneManager.SetActiveScene(tempActive);
+                        switchedActive = true;
+                    }
+                }
+                
                 var op = SceneManager.UnloadSceneAsync(scene);
                 if (op != null)
                 {
@@ -602,10 +686,10 @@ public class TileStreamCoordinator : NetworkBehaviour
 
                     masterSceneUnloaded = true;
                 }
-            }
-            else if (!scene.IsValid() || !scene.isLoaded)
-            {
-                masterSceneUnloaded = true;
+                if (switchedActive && previousActive.IsValid() && previousActive.isLoaded)
+                {
+                    SceneManager.SetActiveScene(previousActive);
+                }
             }
         }
 
@@ -633,5 +717,88 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         ClientLoadsThisFrame++;
+    }
+    
+    private void WireTerrainNeighbors(string scenePath)
+    {
+        if (index == null || string.IsNullOrEmpty(scenePath)) return;
+        if (!index.TryGetByScene(scenePath, out var record)) return;
+
+        var scene = SceneManager.GetSceneByPath(scenePath);
+        if (!scene.isLoaded) return;
+
+        Terrain center = FindTerrainInScene(scene);
+        if (center == null) return;
+
+        Terrain left = FindNeighborTerrain(record.coord + Vector2Int.left);
+        Terrain right = FindNeighborTerrain(record.coord + Vector2Int.right);
+        Terrain top = FindNeighborTerrain(record.coord + Vector2Int.up);
+        Terrain bottom = FindNeighborTerrain(record.coord + Vector2Int.down);
+
+        center.SetNeighbors(left, right, top, bottom);
+
+        if (left != null) left.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.left * 2), center, FindNeighborTerrain(record.coord + Vector2Int.left + Vector2Int.up), FindNeighborTerrain(record.coord + Vector2Int.left + Vector2Int.down));
+        if (right != null) right.SetNeighbors(center, FindNeighborTerrain(record.coord + Vector2Int.right * 2), FindNeighborTerrain(record.coord + Vector2Int.right + Vector2Int.up), FindNeighborTerrain(record.coord + Vector2Int.right + Vector2Int.down));
+        if (top != null) top.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.up + Vector2Int.left), FindNeighborTerrain(record.coord + Vector2Int.up + Vector2Int.right), FindNeighborTerrain(record.coord + Vector2Int.up * 2), center);
+        if (bottom != null) bottom.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.down + Vector2Int.left), FindNeighborTerrain(record.coord + Vector2Int.down + Vector2Int.right), center, FindNeighborTerrain(record.coord + Vector2Int.down * 2));
+    }
+
+    private void UnwireNeighbors(string scenePath)
+    {
+        if (index == null || string.IsNullOrEmpty(scenePath)) return;
+        if (!index.TryGetByScene(scenePath, out var record)) return;
+
+        ClearNeighborSide(record.coord + Vector2Int.left, neighbor => neighbor.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.left * 2), null, FindNeighborTerrain(record.coord + Vector2Int.left + Vector2Int.up), FindNeighborTerrain(record.coord + Vector2Int.left + Vector2Int.down)));
+        ClearNeighborSide(record.coord + Vector2Int.right, neighbor => neighbor.SetNeighbors(null, FindNeighborTerrain(record.coord + Vector2Int.right * 2), FindNeighborTerrain(record.coord + Vector2Int.right + Vector2Int.up), FindNeighborTerrain(record.coord + Vector2Int.right + Vector2Int.down)));
+        ClearNeighborSide(record.coord + Vector2Int.up, neighbor => neighbor.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.up + Vector2Int.left), FindNeighborTerrain(record.coord + Vector2Int.up + Vector2Int.right), FindNeighborTerrain(record.coord + Vector2Int.up * 2), null));
+        ClearNeighborSide(record.coord + Vector2Int.down, neighbor => neighbor.SetNeighbors(FindNeighborTerrain(record.coord + Vector2Int.down + Vector2Int.left), FindNeighborTerrain(record.coord + Vector2Int.down + Vector2Int.right), null, FindNeighborTerrain(record.coord + Vector2Int.down * 2)));
+    }
+
+    private void ClearNeighborSide(Vector2Int coord, System.Action<Terrain> clearer)
+    {
+        var neighbor = FindNeighborTerrain(coord);
+        if (neighbor == null) return;
+        clearer?.Invoke(neighbor);
+    }
+
+    private Terrain FindNeighborTerrain(Vector2Int coord)
+    {
+        if (index != null && index.TryGetByCoord(coord, out var neighborRecord))
+        {
+            var neighborScene = SceneManager.GetSceneByPath(neighborRecord.scenePath);
+            if (neighborScene.isLoaded)
+            {
+                return FindTerrainInScene(neighborScene);
+            }
+        }
+
+        return null;
+    }
+
+    private static Terrain FindTerrainInScene(Scene scene)
+    {
+        if (!scene.IsValid() || !scene.isLoaded) return null;
+
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            var terrain = root.GetComponentInChildren<Terrain>(true);
+            if (terrain != null) return terrain;
+        }
+
+        return null;
+    }
+
+    private Scene GetOrCreateTemporaryActiveScene()
+    {
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            var s = SceneManager.GetSceneAt(i);
+            if (s.IsValid() && s.isLoaded && s != SceneManager.GetActiveScene() && s.path != masterTerrainScenePath)
+            {
+                return s;
+            }
+        }
+
+        return SceneManager.CreateScene("TileStream_TempActive");
     }
 }
