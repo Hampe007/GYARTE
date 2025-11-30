@@ -124,6 +124,18 @@ public partial class TerrainPrefabPainter : EditorWindow
         SyncFoldoutArray();
         AutoAssignOcean();
         cachedBatchRoots = new Dictionary<(PrefabPaintRule rule, int batchIndex), Transform>();
+        
+        // Create or find prefabRoot
+        if (prefabRoot == null)
+        {
+            var existing = GameObject.Find("PrefabPainterRoot");
+            if (existing != null) prefabRoot = existing.transform;
+            else
+            {
+                var go = new GameObject("PrefabPainterRoot");
+                prefabRoot = go.transform;
+            }
+        }
     }
 
     void OnSelectionChange()
@@ -1127,7 +1139,7 @@ public partial class TerrainPrefabPainter : EditorWindow
         string batchName = $"Batch_{currentBatchIndex:000}";
         GameObject b = new GameObject(batchName);
         Transform batchRoot = b.transform;
-        batchRoot.SetParent(ruleRoot);
+        batchRoot.SetParent(prefabRoot);
         batchRoot.hideFlags = HideFlags.HideInHierarchy;
 
         // Cache it

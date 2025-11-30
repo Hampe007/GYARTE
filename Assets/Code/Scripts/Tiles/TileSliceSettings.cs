@@ -5,6 +5,7 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Tile Slice Settings", fileName = "TileSliceSettings")]
 public sealed class TileSliceSettings : ScriptableObject
 {
+    public TileIndex tileIndex;
     [Serializable]
     public sealed class PerTerrain
     {

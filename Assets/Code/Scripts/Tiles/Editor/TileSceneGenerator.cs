@@ -893,12 +893,15 @@ public sealed class TileSceneGenerator : EditorWindow
 
         try
         {
+            List<TileIndex.TileRecord> tempIndexRecords = new List<TileIndex.TileRecord>();
+
             for (int ty = 0; ty < tilesY; ty++)
             {
                 for (int tx = 0; tx < tilesX; tx++)
                 {
                     float progress = processed / (float)total;
-                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]", $"Processing tile {tx},{ty}", progress);
+                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]",
+                        $"Processing tile {tx},{ty}", progress);
 
                     // Build new TerrainData from the source master
                     TerrainData newTD = BuildTileTerrainData(
@@ -906,11 +909,10 @@ public sealed class TileSceneGenerator : EditorWindow
                         layers, detailLayerCount, treePrototypes, treePrototypeRemap
                     );
 
-                    // --- Save/replace TerrainData under the DATA subfolder, include terrain name ---
+                    // Save TerrainData under DATA folder
                     string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{_currentTerrainLabel}_{tx}_{ty}.asset";
                     var existingTD = AssetDatabase.LoadAssetAtPath<TerrainData>(tdPath);
 
-                    // Detect channel changes (only for the channels we copy)
                     bool heightsChanged = false, alphaChanged = false, detailsChanged = false, treesChanged = false;
                     int treesAdded = 0, treesRemoved = 0; bool treesModified = false;
 
@@ -927,22 +929,21 @@ public sealed class TileSceneGenerator : EditorWindow
 
                         if (canCopyTrees)
                         {
-                            bool treesEqual = TreesEqualAndDeltas(existingTD, newTD, out treesAdded, out treesRemoved, out bool modified);
-                            treesChanged = !treesEqual;
+                            bool equal = TreesEqualAndDeltas(existingTD, newTD,
+                                out treesAdded, out treesRemoved, out bool modified);
+                            treesChanged = !equal;
                             treesModified = modified;
                         }
                     }
 
-                    // Update per-terrain summary flags (used for the single per-terrain log later)
-                    _changedHeights  |= heightsChanged;
-                    _changedAlpha    |= alphaChanged;
-                    _changedDetails  |= detailsChanged;
-                    _changedTrees    |= treesChanged;
-                    if (treesAdded   > 0) _treesAdded        += treesAdded;
-                    if (treesRemoved > 0) _treesRemoved      += treesRemoved;
-                    if (treesModified)    _treesModifiedTiles += 1;
+                    _changedHeights |= heightsChanged;
+                    _changedAlpha |= alphaChanged;
+                    _changedDetails |= detailsChanged;
+                    _changedTrees |= treesChanged;
+                    if (treesAdded > 0) _treesAdded += treesAdded;
+                    if (treesRemoved > 0) _treesRemoved += treesRemoved;
+                    if (treesModified) _treesModifiedTiles += 1;
 
-                    // Decide whether to write asset
                     bool anyChannelChanged = heightsChanged || alphaChanged || detailsChanged || treesChanged;
 
                     if (existingTD == null)
@@ -953,8 +954,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     {
                         if (onlyUpdateIfChanged && !anyChannelChanged)
                         {
-                            // Nothing changed in the channels we care about → reuse existing, discard new
-                            UnityEngine.Object.DestroyImmediate(newTD);
+                            DestroyImmediate(newTD);
                             newTD = existingTD;
                         }
                         else
@@ -963,7 +963,7 @@ public sealed class TileSceneGenerator : EditorWindow
                         }
                     }
 
-                    // --- Scene name/path under the SCENES subfolder, supports {t} token ---
+                    // Scene setup
                     string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
                     string tileScenePath = $"{_outputScenesFolder}/{tileSceneName}.unity";
                     bool sceneExists = File.Exists(tileScenePath);
@@ -980,6 +980,25 @@ public sealed class TileSceneGenerator : EditorWindow
 
                             EditorSceneManager.MarkSceneDirty(opened);
                             EditorSceneManager.SaveScene(opened);
+
+                            // ---------------------------
+                            // TILE INDEX RECORD (RESLICE)
+                            // ---------------------------
+                            Vector3 tileOrigin = cachedOrigin + new Vector3(
+                                tx * tileSize.x,
+                                0f,
+                                ty * tileSize.z
+                            );
+
+                            Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                            Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+
+                            tempIndexRecords.Add(new TileIndex.TileRecord
+                            {
+                                coord = new Vector2Int(tx, ty),
+                                scenePath = tileScenePath,
+                                worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                            });
                         }
                         finally
                         {
@@ -988,7 +1007,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     }
                     else
                     {
-                        // Fresh create (Additive mode so master stays loaded)
+                        // Fresh tile
                         var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
                         newScene.name = tileSceneName;
 
@@ -1004,6 +1023,25 @@ public sealed class TileSceneGenerator : EditorWindow
 
                         EditorSceneManager.SaveScene(newScene, tileScenePath);
                         EditorSceneManager.CloseScene(newScene, true);
+
+                        // ---------------------------
+                        // TILE INDEX RECORD (FRESH)
+                        // ---------------------------
+                        Vector3 tileOrigin = cachedOrigin + new Vector3(
+                            tx * tileSize.x,
+                            0f,
+                            ty * tileSize.z
+                        );
+
+                        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                        Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+
+                        tempIndexRecords.Add(new TileIndex.TileRecord
+                        {
+                            coord = new Vector2Int(tx, ty),
+                            scenePath = tileScenePath,
+                            worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                        });
                     }
 
                     if (addToBuildSettings)
@@ -1013,15 +1051,24 @@ public sealed class TileSceneGenerator : EditorWindow
                 }
             }
 
-            AssetDatabase.SaveAssets();
+            // Write TileIndex once all tiles are processed
+            if (settings != null && settings.tileIndex != null)
+            {
+                settings.tileIndex.SetTiles(tempIndexRecords);
+                EditorUtility.SetDirty(settings.tileIndex);
+                AssetDatabase.SaveAssets();
+            }
+
             AssetDatabase.Refresh();
         }
         finally
         {
             EditorUtility.ClearProgressBar();
+
             if (!string.IsNullOrEmpty(originalScenePath) && File.Exists(originalScenePath))
                 EditorSceneManager.OpenScene(originalScenePath, OpenSceneMode.Single);
         }
+
     }
 
     private void CopyPropsIntoTileScene(
@@ -1608,6 +1655,30 @@ public sealed class TileSceneGenerator : EditorWindow
             EditorUtility.DisplayDialog("Clean Build Settings",
                 "No missing scenes found.", "OK");
         }
+    }
+    
+    private Bounds ComputeTileBounds(int tx, int ty, float tileSizeX, float tileSizeY, Vector3 masterOrigin)
+    {
+        // origin of this tile in world space
+        Vector3 tileOrigin = new Vector3(
+            masterOrigin.x + tx * tileSizeX,
+            masterOrigin.y,
+            masterOrigin.z + ty * tileSizeY
+        );
+
+        Vector3 center = new Vector3(
+            tileOrigin.x + tileSizeX * 0.5f,
+            masterOrigin.y + 2000f, // tall so SqrDistance always works
+            tileOrigin.z + tileSizeY * 0.5f
+        );
+
+        Vector3 extents = new Vector3(
+            tileSizeX * 0.5f,
+            2000f,                   // tall vertical range
+            tileSizeY * 0.5f
+        );
+
+        return new Bounds(center, extents * 2f);
     }
 }
 #endif

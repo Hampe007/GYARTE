@@ -47,6 +47,12 @@ public class RuntimePerformanceControl : MonoBehaviour
     {
         if (streaming == null) return;
 
+        if (streaming.StreamingLocked)
+        {
+            streaming.enabled = false;
+            return;
+        }
+        
         // If off → force unload everything and stop scanning
         if (!streamingEnabled)
         {
@@ -90,9 +96,21 @@ public class RuntimePerformanceControl : MonoBehaviour
     {
         GUI.Box(new Rect(15, 15, 220, 130), "Perf Control");
 
+        bool streamingLocked = streaming != null && streaming.StreamingLocked;
+
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled = !streamingLocked;
+        
         if (GUI.Button(new Rect(25, 45, 200, 25), streamingEnabled ? "Disable Streaming" : "Enable Streaming"))
             SetStreaming(!streamingEnabled);
 
+        GUI.enabled = previousEnabled;
+
+        if (streamingLocked)
+        {
+            GUI.Label(new Rect(25, 45, 200, 40), "Tile streaming disabled\nfor this session.");
+        }
+        
         if (GUI.Button(new Rect(25, 75, 200, 25), propsEnabled ? "Disable Props" : "Enable Props"))
             SetProps(!propsEnabled);
 

@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f7f08869351f2d140afbf0d8c40ec331, type: 3}
   m_Name: TileSliceSettings
   m_EditorClassIdentifier: 
+  tileIndex: {fileID: 11400000, guid: d51f79da29affb54383a44009ae0628e, type: 2}
   lastResults:
   - label: Terrain_Master
     origin: {x: 0, y: -2, z: 0}

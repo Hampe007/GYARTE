@@ -267,9 +267,12 @@ public class LobbyController : MonoBehaviour
 
         // Prevent double-clicks while the scene change message is in-flight
         if (startGameButton != null) startGameButton.interactable = false;
-
+        
+        // ===============================================================================================
+        // USE "Temp Terrain" FOR DESDES1 BUILD TILE STREAMER DNOT WORKING, CHANGE BACK TO "Terrain" LATER
+        // ===============================================================================================
         // Kick off the game scene (ensure "Terrain" scene is in Build Settings)
-        const string sceneName = "Terrain";
+        const string sceneName = "Temp Terrain";
         Debug.Log($"[Game] ServerChangeScene('{sceneName}')");
         NetworkManager.ServerChangeScene(sceneName);         // Mirror syncs all clients to this scene
     }

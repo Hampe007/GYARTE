@@ -36,6 +36,11 @@ public class TileStreamCoordinator : NetworkBehaviour
     public Transform offlineTarget;
     private Coroutine offlineLoop;
 
+    [Header("Build Overrides")]
+    [SerializeField] private bool disableInPlayerBuilds = false;
+    [SerializeField] private bool disableAtRuntime = false;
+
+    [Header("Master Terrain")]
     [SerializeField] private Terrain masterTerrain;
     [SerializeField] private bool disableMasterOnStart = true;
     [SerializeField] private bool unloadMasterTerrainScene = true;
@@ -81,6 +86,17 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void Awake()
     {
+        if (StreamingLocked)
+        {
+            if (logActions)
+            {
+                Debug.Log("Tile streaming disabled for this session; coordinator will remain inactive.");
+            }
+
+            enabled = false;
+            return;
+        }
+        
         AutoAssignReferences();
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
@@ -92,6 +108,10 @@ public class TileStreamCoordinator : NetworkBehaviour
         UpdateRadiusCache();
     }
 
+    public bool BuildStreamingDisabled => disableInPlayerBuilds && !Application.isEditor;
+    public bool RuntimeStreamingDisabled => disableAtRuntime;
+    public bool StreamingLocked => BuildStreamingDisabled || RuntimeStreamingDisabled;
+    
     private void Update()
     {
         // If streaming is active, ensure the master terrain is disabled/unloaded so we don't double load
