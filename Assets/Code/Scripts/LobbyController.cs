@@ -268,7 +268,7 @@ public class LobbyController : MonoBehaviour
         // Prevent double-clicks while the scene change message is in-flight
         if (startGameButton != null) startGameButton.interactable = false;
 
-        // Kick off the game scene (ensure "Terrain" scene is in Build Settings)
+        // Kick off the game scene (ensure "GameExp1" is in Build Settings)
         const string sceneName = "GameExp1";
         Debug.Log($"[Game] ServerChangeScene('{sceneName}')");
         NetworkManager.ServerChangeScene(sceneName);         // Mirror syncs all clients to this scene

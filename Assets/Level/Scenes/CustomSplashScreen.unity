@@ -152,7 +152,7 @@ MonoBehaviour:
   canvasGroup: {fileID: 2061593953}
   progressSlider: {fileID: 1761048326}
   statusLabel: {fileID: 991138203}
-  minDisplayTime: 15
+  minDisplayTime: 1
   finishTweenDuration: 0.75
   fadeDuration: 0.6
   progressCurveTo90:

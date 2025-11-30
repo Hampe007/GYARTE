@@ -149,7 +149,10 @@ public class CustomNetworkManager : NetworkManager
 
         try
         {
-            if (sceneName != "Terrain") return; // only swap in the Game scene
+            // Only swap lobby avatars for real player characters in the actual game scene.
+            // Accept both the current build ("GameExp1") and the older names so tests don't break.
+            bool isGameScene = sceneName == "GameExp1" || sceneName == "Terrain" || sceneName == "Game Exp" || sceneName == "Game";
+            if (!isGameScene) return;
 
             // 1) Find the SpawnPointManager in the newly loaded Game scene
             var spawnMgr = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
