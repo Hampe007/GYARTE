@@ -170,12 +170,6 @@ public class CustomNetworkManager : NetworkManager
             LobbyController.instance.ShowBlackout();
     }
     
-    public override void OnServerChangeScene(string newSceneName)
-    {
-        UpdateAutoCreatePlayerForScene(newSceneName);
-        base.OnServerChangeScene(newSceneName);
-    }
-
     public struct ServerShutdownMsg : NetworkMessage // Tells clients the host is shutting down on purpose
     {
         public string reason; // e.g., "host_exit"
@@ -183,9 +177,6 @@ public class CustomNetworkManager : NetworkManager
     
     private void Awake()
     {
-        // Enable auto-create only in scenes that should spawn lobby avatars.
-        UpdateAutoCreatePlayerForScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
-
         if (spawnPrefabs == null)
             spawnPrefabs = new List<GameObject>();
 
@@ -204,8 +195,6 @@ public class CustomNetworkManager : NetworkManager
 
         try
         {
-            UpdateAutoCreatePlayerForScene(sceneName);
-
             if (!IsGameScene(sceneName))
             {
                 _spawnMgrResetInGameScene = false;
@@ -236,12 +225,6 @@ public class CustomNetworkManager : NetworkManager
         {
             SpawnOrReplaceGamePlayer(conn);
         }
-    }
-
-    public override void OnClientChangeScene(string newSceneName, SceneOperation sceneOperation, bool customHandling)
-    {
-        UpdateAutoCreatePlayerForScene(newSceneName);
-        base.OnClientChangeScene(newSceneName, sceneOperation, customHandling);
     }
 
     private void SpawnOrReplaceGamePlayer(NetworkConnectionToClient conn)
@@ -288,9 +271,6 @@ public class CustomNetworkManager : NetworkManager
         }
 
         var newPlayer = Instantiate(GameCharacterPrefab, pos, rot);
-        // Ensure camera ownership is enforced per client
-        if (newPlayer.GetComponent<OwnerCameraActivator>() == null)
-            newPlayer.AddComponent<OwnerCameraActivator>();
 
         if (conn.identity != null)
         {
@@ -307,10 +287,4 @@ public class CustomNetworkManager : NetworkManager
 
     private static bool IsLobbyScene(string sceneName)
         => sceneName == "Lobby";
-
-    private void UpdateAutoCreatePlayerForScene(string sceneName)
-    {
-        // Only let Mirror auto-add players in the Lobby scene.
-        autoCreatePlayer = IsLobbyScene(sceneName);
-    }
 }
