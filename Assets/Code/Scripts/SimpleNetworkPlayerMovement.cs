@@ -45,6 +45,8 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
     private void Awake()
     {
+        EnsureOwnerCameraReference();
+
         _controller = GetComponent<CharacterController>();
 
         if (ownerCamera != null)
@@ -57,9 +59,19 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        // Before ownership is known, keep the vcam disabled to avoid stealing the brain.
+        if (ownerCamera == null) EnsureOwnerCameraReference();
+        SetCameraActive(false);
+    }
+
     public override void OnStartClient()
     {
         base.OnStartClient();
+
+        if (ownerCamera == null)
+            EnsureOwnerCameraReference();
 
         if (!isOwned)
             DisableRemoteCameraRig(); // make sure only the owning client keeps its camera active
@@ -328,5 +340,14 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
         ownerCamera.enabled = active;
         ownerCamera.gameObject.SetActive(active);
+    }
+
+    private void EnsureOwnerCameraReference()
+    {
+        if (ownerCamera != null)
+            return;
+
+        // Find a CinemachineCamera in children (even if inactive).
+        ownerCamera = GetComponentInChildren<CinemachineCamera>(true);
     }
 }
