@@ -79,7 +79,10 @@ public class TileStreamCoordinator : NetworkBehaviour
             serverLoop = null;
         }
 
-        serverLoaded.Clear();
+        if (serverLoaded.Count > 0)
+        {
+            StartCoroutine(UnloadAllTiles(serverLoaded, isServer: true));
+        }
 
         base.OnStopServer();
     }
@@ -540,6 +543,11 @@ public class TileStreamCoordinator : NetworkBehaviour
             StopCoroutine(offlineLoop);
             offlineLoop = null;
         }
+
+        if (clientLoaded.Count > 0)
+        {
+            StartCoroutine(UnloadAllTiles(clientLoaded, isServer: false));
+        }
     }
 
     // Add the offline loop (local client-side streaming)
@@ -714,6 +722,17 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         masterWorkRunning = false;
+    }
+
+    private IEnumerator UnloadAllTiles(HashSet<string> tiles, bool isServer)
+    {
+        var paths = tiles.ToList();
+        foreach (var path in paths)
+        {
+            yield return isServer ? UnloadTileServer(path) : UnloadTileClient(path);
+        }
+
+        tiles.Clear();
     }
     private void IncrementServerLoadsThisFrame()
     {
