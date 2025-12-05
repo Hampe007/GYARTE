@@ -128,5 +128,10 @@ public class TileIndex : ScriptableObject
         tiles = newTiles ?? new List<TileRecord>();
         RebuildLookups();
     }
+
+    public void SetTileSizeMeters(Vector2 newTileSize)
+    {
+        tileSizeMeters = newTileSize;
+    }
 #endif
 }

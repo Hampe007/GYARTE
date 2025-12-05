@@ -1054,6 +1054,9 @@ public sealed class TileSceneGenerator : EditorWindow
             // Write TileIndex once all tiles are processed
             if (settings != null && settings.tileIndex != null)
             {
+                var tileSize2D = new Vector2(tileSize.x, tileSize.z);
+                settings.tileIndex.SetTileSizeMeters(tileSize2D);
+                settings.tileIndex.SetOriginOffset(new Vector2(cachedOrigin.x, cachedOrigin.z));
                 settings.tileIndex.SetTiles(tempIndexRecords);
                 EditorUtility.SetDirty(settings.tileIndex);
                 AssetDatabase.SaveAssets();
