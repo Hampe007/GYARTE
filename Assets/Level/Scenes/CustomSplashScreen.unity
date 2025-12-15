@@ -152,7 +152,7 @@ MonoBehaviour:
   canvasGroup: {fileID: 2061593953}
   progressSlider: {fileID: 1761048326}
   statusLabel: {fileID: 991138203}
-  minDisplayTime: 1
+  minDisplayTime: 5
   finishTweenDuration: 0.75
   fadeDuration: 0.6
   progressCurveTo90:
@@ -409,6 +409,7 @@ MonoBehaviour:
   m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
+  m_characterHorizontalScale: 1
   m_wordSpacing: 0
   m_lineSpacing: 0
   m_lineSpacingMax: 0
@@ -1180,6 +1181,7 @@ MonoBehaviour:
   m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
+  m_characterHorizontalScale: 1
   m_wordSpacing: 0
   m_lineSpacing: 0
   m_lineSpacingMax: 0

@@ -71,6 +71,14 @@ public class PlayerHUDController : MonoBehaviour
             return;
         }
 
+        // Escape key -> behave like pressing the "Back to Main Menu" button.
+        // This gives the player a quick way to quit to main menu from the game scene.
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            OnBackToMainMenuButtonPressed();
+            return;
+        }
+
         // Health slider – expects 0..1
         if (healthSlider != null)
         {
