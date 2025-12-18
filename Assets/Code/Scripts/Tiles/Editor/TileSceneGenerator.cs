@@ -60,6 +60,7 @@ public sealed class TileSceneGenerator : EditorWindow
 
     private string _outputScenesFolder;
     private string _outputDataFolder;
+    private string _outputPropsFolder;
 
     // Copy Channels
     [Header("Copy Channels")]
@@ -192,14 +193,21 @@ public sealed class TileSceneGenerator : EditorWindow
             copyTrees
         );
         copyProps = EditorGUILayout.ToggleLeft(
-            new GUIContent("Copy Props (TileProp)", "Copies GameObjects marked with TileProp from the master scene into each tile scene."),
+            new GUIContent(
+                "Copy Props (TileProp)",
+                "Copies all prefabs that contain TileProp markers, parents them under tile-local roots, and saves a PropTileData asset per tile for deterministic reloads."),
             copyProps
         );
-        
+
         EditorGUILayout.HelpBox(
             "Enabling splats, details, trees, and props is far heavier than copying heights only. " +
             "If you just need to validate slicing, run a fast pass first, then switch back to full fidelity before final export.",
             MessageType.Info);
+
+        EditorGUILayout.HelpBox(
+            "Tiles now write terrain data to TerrainData/ and props to Props/ with tile-local transforms. " +
+            "Terrain resolutions must divide evenly across the grid; adjust Tile Size (meters) so heightmaps, alphamaps, and detail maps slice without seams.",
+            MessageType.None);
 
         using (new EditorGUILayout.HorizontalScope())
         {
@@ -439,6 +447,7 @@ public sealed class TileSceneGenerator : EditorWindow
                 ValidateInputs();
                 DeleteOldTileScenes(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
                 DeleteOldTerrainDataAssets(_outputDataFolder, _currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
+                DeleteOldPropDataAssets(_outputPropsFolder, _currentTerrainLabel, tilesX, tilesY);
                 RemoveOldBuildSettingsEntries(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
                 
                 if (settings && settings.TryGet(_currentTerrainLabel, out var r))
@@ -605,6 +614,35 @@ public sealed class TileSceneGenerator : EditorWindow
                 if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
                 {
                     Debug.Log($"[TileSceneGenerator] Deleting old TerrainData: {file}");
+                    AssetDatabase.DeleteAsset(file);
+                }
+            }
+        }
+    }
+
+    private void DeleteOldPropDataAssets(string propsFolder, string terrainLabel, int tilesX, int tilesY)
+    {
+        if (!Directory.Exists(propsFolder))
+            return;
+
+        var files = Directory.GetFiles(propsFolder, "Props_*.asset", SearchOption.TopDirectoryOnly);
+
+        foreach (var file in files)
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+
+            if (!name.StartsWith("Props_" + terrainLabel + "_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var parts = name.Split('_');
+            if (parts.Length < 4)
+                continue;
+
+            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            {
+                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
+                {
+                    Debug.Log($"[TileSceneGenerator] Deleting old PropTileData: {file}");
                     AssetDatabase.DeleteAsset(file);
                 }
             }
@@ -813,11 +851,14 @@ public sealed class TileSceneGenerator : EditorWindow
 
         string scenesFolder = Path.Combine(outputFolder, "Scenes").Replace("\\", "/");
         string dataFolder   = Path.Combine(outputFolder, "TerrainData").Replace("\\", "/");
+        string propsFolder  = Path.Combine(outputFolder, "Props").Replace("\\", "/");
         EnsureFolder(scenesFolder);
         EnsureFolder(dataFolder);
+        EnsureFolder(propsFolder);
 
         _outputScenesFolder = scenesFolder;
         _outputDataFolder   = dataFolder;
+        _outputPropsFolder  = propsFolder;
     }
 
     private static void EnsureFolder(string path)
@@ -828,6 +869,35 @@ public sealed class TileSceneGenerator : EditorWindow
         if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
             EnsureFolder(parent);
         AssetDatabase.CreateFolder(parent, leaf);
+    }
+
+    private string GetPropAssetPath(int tx, int ty)
+    {
+        return $"{_outputPropsFolder}/Props_{_currentTerrainLabel}_{tx}_{ty}.asset";
+    }
+
+    private void ValidateResolutionDivisibility()
+    {
+        if (_srcTD == null) return;
+
+        RequireDivisible(_srcTD.heightmapResolution - 1, tilesX, "heightmap X");
+        RequireDivisible(_srcTD.heightmapResolution - 1, tilesY, "heightmap Y");
+        RequireDivisible(_srcTD.alphamapResolution, tilesX, "alphamap X");
+        RequireDivisible(_srcTD.alphamapResolution, tilesY, "alphamap Y");
+        RequireDivisible(_srcTD.detailResolution, tilesX, "detail X");
+        RequireDivisible(_srcTD.detailResolution, tilesY, "detail Y");
+    }
+
+    private void RequireDivisible(int value, int divisor, string label)
+    {
+        if (divisor <= 0) throw new InvalidOperationException($"{label} divisor must be > 0");
+        if (value < divisor) return;
+
+        int remainder = value % divisor;
+        if (remainder != 0)
+        {
+            throw new InvalidOperationException($"Terrain '{_currentTerrainLabel}' {label} ({value}) must divide evenly by tiles ({divisor}). Adjust tile size or terrain resolution to avoid seams.");
+        }
     }
     
     private static void ClearConsole()
@@ -840,6 +910,8 @@ public sealed class TileSceneGenerator : EditorWindow
     // -------- core slicing (uses only cached data) --------
     private void RunSliceOrReslice(Vector3 cachedOrigin)
     {
+        ValidateResolutionDivisibility();
+
         var srcSize = _srcTD.size; // world size in meters
         var tileSize = new Vector3(srcSize.x / tilesX, srcSize.y, srcSize.z / tilesY);
 
@@ -967,6 +1039,7 @@ public sealed class TileSceneGenerator : EditorWindow
                     string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
                     string tileScenePath = $"{_outputScenesFolder}/{tileSceneName}.unity";
                     bool sceneExists = File.Exists(tileScenePath);
+                    string propAssetPath = copyProps ? GetPropAssetPath(tx, ty) : string.Empty;
 
                     if (nonDestructiveReslice && sceneExists)
                     {
@@ -976,7 +1049,7 @@ public sealed class TileSceneGenerator : EditorWindow
                             var terrainGO = FindOrCreateTerrainGO(tx, ty, newTD, tileSize, cachedOrigin, opened);
 
                             if (copyProps)
-                                CopyPropsIntoTileScene(masterScene, opened, tx, ty, tileSize, cachedOrigin);
+                                CopyPropsIntoTileScene(masterScene, opened, tx, ty, tileSize, cachedOrigin, propAssetPath);
 
                             EditorSceneManager.MarkSceneDirty(opened);
                             EditorSceneManager.SaveScene(opened);
@@ -990,14 +1063,19 @@ public sealed class TileSceneGenerator : EditorWindow
                                 ty * tileSize.z
                             );
 
-                            Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
-                            Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                            float verticalExtent = Mathf.Max(tileSize.y * 0.5f, 4000f);
+                            Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, verticalExtent, tileSize.z * 0.5f);
+                            Vector3 boundsSize = new Vector3(tileSize.x, verticalExtent * 2f, tileSize.z);
 
                             tempIndexRecords.Add(new TileIndex.TileRecord
                             {
                                 coord = new Vector2Int(tx, ty),
                                 scenePath = tileScenePath,
-                                worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                                worldBounds = new Bounds(boundsCenter, boundsSize),
+                                worldOrigin = tileOrigin,
+                                tileSize = tileSize,
+                                propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty,
+                                propDataPath = propAssetPath
                             });
                         }
                         finally
@@ -1019,7 +1097,7 @@ public sealed class TileSceneGenerator : EditorWindow
                         if (col != null) col.enabled = true;
 
                         if (copyProps)
-                            CopyPropsIntoTileScene(masterScene, newScene, tx, ty, tileSize, cachedOrigin);
+                            CopyPropsIntoTileScene(masterScene, newScene, tx, ty, tileSize, cachedOrigin, propAssetPath);
 
                         EditorSceneManager.SaveScene(newScene, tileScenePath);
                         EditorSceneManager.CloseScene(newScene, true);
@@ -1033,14 +1111,19 @@ public sealed class TileSceneGenerator : EditorWindow
                             ty * tileSize.z
                         );
 
-                        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
-                        Vector3 boundsExtents = new Vector3(tileSize.x * 0.5f, 500f, tileSize.z * 0.5f);
+                        float verticalExtent = Mathf.Max(tileSize.y * 0.5f, 4000f);
+                        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, verticalExtent, tileSize.z * 0.5f);
+                        Vector3 boundsSize = new Vector3(tileSize.x, verticalExtent * 2f, tileSize.z);
 
                         tempIndexRecords.Add(new TileIndex.TileRecord
                         {
                             coord = new Vector2Int(tx, ty),
                             scenePath = tileScenePath,
-                            worldBounds = new Bounds(boundsCenter, boundsExtents * 2f)
+                            worldBounds = new Bounds(boundsCenter, boundsSize),
+                            worldOrigin = tileOrigin,
+                            tileSize = tileSize,
+                            propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty,
+                            propDataPath = propAssetPath
                         });
                     }
 
@@ -1080,40 +1163,46 @@ public sealed class TileSceneGenerator : EditorWindow
         int tx,
         int ty,
         Vector3 tileSize,
-        Vector3 terrainOrigin)
+        Vector3 terrainOrigin,
+        string propAssetPath)
     {
-        var tileRoots = tileScene.GetRootGameObjects();
-        var existing = tileRoots
-            .SelectMany(go => go.GetComponentsInChildren<TileProp>(true))
-            .ToArray();
+        string propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty;
+        Vector3 tileOrigin = new Vector3(
+            terrainOrigin.x + tx * tileSize.x,
+            terrainOrigin.y,
+            terrainOrigin.z + ty * tileSize.z);
 
-        for (int i = 0; i < existing.Length; i++)
+        RemoveExistingPropRoots(tileScene, propRootName);
+
+        var propRoot = new GameObject(propRootName);
+        propRoot.transform.position = tileOrigin;
+        propRoot.transform.rotation = Quaternion.identity;
+        propRoot.transform.localScale = Vector3.one;
+        SceneManager.MoveGameObjectToScene(propRoot, tileScene);
+
+        var candidates = CollectPropCandidates(masterScene);
+        var instanceData = new List<PropInstanceData>(Mathf.Max(4, candidates.Count));
+
+        if (candidates.Count == 0)
         {
-            var p = existing[i];
-            if (p && p.gameObject)
-                GameObject.DestroyImmediate(p.gameObject);
+            SavePropTileDataAsset(propAssetPath, new Vector2Int(tx, ty), tileOrigin, tileSize, instanceData);
+            return;
         }
 
-        var masterRoots = masterScene.GetRootGameObjects();
-        var masterProps = masterRoots
-            .SelectMany(go => go.GetComponentsInChildren<TileProp>(true))
-            .ToArray();
-
-        if (masterProps.Length == 0) return;
-
-        float minX = terrainOrigin.x + tx * tileSize.x;
+        float minX = tileOrigin.x;
         float maxX = minX + tileSize.x;
-        float minZ = terrainOrigin.z + ty * tileSize.z;
+        float minZ = tileOrigin.z;
         float maxZ = minZ + tileSize.z;
 
-        foreach (var prop in masterProps)
+        foreach (var go in candidates)
         {
-            if (!prop || !prop.gameObject) continue;
-            Vector3 p = prop.transform.position;
+            if (go == null) continue;
+
+            Vector3 p = go.transform.position;
             if (p.x < minX || p.x >= maxX) continue;
             if (p.z < minZ || p.z >= maxZ) continue;
 
-            GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(prop.gameObject);
+            GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(go);
             GameObject clone;
             if (prefabSource != null)
             {
@@ -1121,17 +1210,88 @@ public sealed class TileSceneGenerator : EditorWindow
             }
             else
             {
-                clone = UnityEngine.Object.Instantiate(prop.gameObject);
+                clone = UnityEngine.Object.Instantiate(go);
                 SceneManager.MoveGameObjectToScene(clone, tileScene);
             }
 
-            clone.transform.position = p;
-            clone.transform.rotation = prop.transform.rotation;
-            clone.transform.localScale = prop.transform.localScale;
+            if (clone == null) continue;
+
+            clone.transform.SetParent(propRoot.transform, false);
+            clone.transform.localPosition = p - tileOrigin;
+            clone.transform.localRotation = go.transform.rotation;
+            clone.transform.localScale = go.transform.lossyScale;
 
             if (!clone.GetComponent<TileProp>())
                 clone.AddComponent<TileProp>();
+
+            instanceData.Add(new PropInstanceData
+            {
+                prefab = prefabSource,
+                localPosition = clone.transform.localPosition,
+                localRotation = clone.transform.localRotation,
+                localScale = clone.transform.localScale
+            });
         }
+
+        SavePropTileDataAsset(propAssetPath, new Vector2Int(tx, ty), tileOrigin, tileSize, instanceData);
+    }
+
+    private static void RemoveExistingPropRoots(Scene tileScene, string propRootName)
+    {
+        var roots = tileScene.GetRootGameObjects();
+        foreach (var root in roots)
+        {
+            if (root == null) continue;
+            if (root.name == propRootName || root.name.StartsWith(TileRuntimeConstants.PropRootPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+    }
+
+    private void SavePropTileDataAsset(string assetPath, Vector2Int coord, Vector3 tileOrigin, Vector3 tileSize, List<PropInstanceData> instances)
+    {
+        if (string.IsNullOrEmpty(assetPath)) return;
+
+        var data = AssetDatabase.LoadAssetAtPath<PropTileData>(assetPath);
+        if (data == null)
+        {
+            data = ScriptableObject.CreateInstance<PropTileData>();
+            AssetDatabase.CreateAsset(data, assetPath);
+        }
+
+        data.ResetForTile(coord, tileOrigin, tileSize);
+        data.instances.AddRange(instances);
+        EditorUtility.SetDirty(data);
+    }
+
+    private List<GameObject> CollectPropCandidates(Scene masterScene)
+    {
+        var results = new List<GameObject>(256);
+        var seen = new HashSet<GameObject>();
+
+        foreach (var root in masterScene.GetRootGameObjects())
+        {
+            if (root == null) continue;
+
+            foreach (var marker in root.GetComponentsInChildren<TileProp>(true))
+            {
+                if (marker == null) continue;
+                var candidate = PrefabUtility.GetOutermostPrefabInstanceRoot(marker.gameObject) ?? marker.gameObject;
+                if (candidate != null && candidate.scene == masterScene && seen.Add(candidate))
+                    results.Add(candidate);
+            }
+
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == null) continue;
+                var outer = PrefabUtility.GetOutermostPrefabInstanceRoot(t.gameObject);
+                if (outer != null && outer.scene == masterScene && seen.Add(outer))
+                    results.Add(outer);
+            }
+        }
+
+        return results;
     }
 
     private TerrainData BuildTileTerrainData(

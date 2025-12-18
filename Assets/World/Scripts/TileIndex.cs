@@ -11,6 +11,10 @@ public class TileIndex : ScriptableObject
         public Vector2Int coord;
         public string scenePath;
         public Bounds worldBounds;
+        public Vector3 worldOrigin;
+        public Vector3 tileSize;
+        public string propRootName;
+        public string propDataPath;
     }
 
     [SerializeField] private Vector2 tileSizeMeters = new(250f, 250f);
@@ -66,6 +70,15 @@ public class TileIndex : ScriptableObject
                 pathLookup[record.scenePath] = record;
             }
         }
+    }
+
+    public Vector3 GetTileOrigin(Vector2Int coord)
+    {
+        return new Vector3(
+            coord.x * tileSizeMeters.x + originOffsetMeters.x,
+            0f,
+            coord.y * tileSizeMeters.y + originOffsetMeters.y
+        );
     }
 
     public bool TryGetByCoord(Vector2Int coord, out TileRecord record)

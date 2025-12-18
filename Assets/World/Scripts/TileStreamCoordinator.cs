@@ -21,6 +21,8 @@ public class TileStreamCoordinator : NetworkBehaviour
     private readonly HashSet<string> serverLoaded = new();
     private readonly HashSet<string> clientLoaded = new();
     private readonly List<Vector3> tempPlayerPositions = new();
+    private readonly HashSet<string> desiredTiles = new();
+    private readonly Dictionary<string, TileInstance> liveTiles = new();
 
     private float loadRadiusSquared;
     private float unloadRadiusSquared;
@@ -35,6 +37,9 @@ public class TileStreamCoordinator : NetworkBehaviour
     [Tooltip("Transform to follow in offline streaming mode; defaults to player or main camera when unset.")]
     public Transform offlineTarget;
     private Coroutine offlineLoop;
+
+    private TileStreamer streamer;
+    private TileLoader loader;
 
     [Header("Build Overrides")]
     [SerializeField] private bool disableInPlayerBuilds = false;
@@ -99,8 +104,11 @@ public class TileStreamCoordinator : NetworkBehaviour
             enabled = false;
             return;
         }
-        
-        AutoAssignReferences();
+
+        streamer = new TileStreamer(index);
+        loader = new TileLoader(this, liveTiles);
+
+        InitializeReferences();
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
         masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
@@ -115,28 +123,6 @@ public class TileStreamCoordinator : NetworkBehaviour
     public bool RuntimeStreamingDisabled => disableAtRuntime;
     public bool StreamingLocked => BuildStreamingDisabled || RuntimeStreamingDisabled;
     
-    private void Update()
-    {
-        // If streaming is active, ensure the master terrain is disabled/unloaded so we don't double load
-        bool streamingActive = clientLoaded.Count > 0 || serverLoaded.Count > 0;
-
-        bool masterActive = masterTerrain != null && masterTerrain.gameObject.activeSelf;
-        masterDisabled = !masterActive; // track actual state instead of only the cached flag
-
-        bool needDisable = streamingActive && disableMasterOnStart && masterActive;
-        bool needUnload = streamingActive && unloadMasterTerrainScene && !masterSceneUnloaded;
-
-        if ((needDisable || needUnload) && !masterWorkRunning)
-        {
-            StartCoroutine(EnsureMasterTerrainDisabled());
-        }
-    }
-    
-    private void LateUpdate()
-    {
-        UpdateRadiusCache();
-    }
-
     private void UpdateRadiusCache()
     {
         if (loadRadius < 0f)
@@ -178,8 +164,6 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         UpdateRadiusCache();
-
-        var desired = new HashSet<string>();
         tempPlayerPositions.Clear();
 
         foreach (var kvp in NetworkServer.connections)
@@ -192,45 +176,40 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             Vector3 position = conn.identity.transform.position;
             tempPlayerPositions.Add(position);
-            AddTilesWithinRadius(position, desired, loadRadiusSquared);
         }
 
         if (tempPlayerPositions.Count == 0 && player != null)
         {
             Vector3 position = player.position;
             tempPlayerPositions.Add(position);
-            AddTilesWithinRadius(position, desired, loadRadiusSquared);
         }
 
-        if (edgeBuffer > 0f && tempPlayerPositions.Count > 0)
-        {
-            MaintainHysteresis(serverLoaded, desired, tempPlayerPositions);
-        }
+        streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, serverLoaded, desiredTiles);
 
-        if (desired.SetEquals(serverLoaded))
+        if (desiredTiles.SetEquals(serverLoaded))
         {
             ServerQueuedLoads = 0;
             yield break;
         }
 
-        var toLoad = desired.Except(serverLoaded).ToList();
-        var toUnload = serverLoaded.Except(desired).ToList();
+        var toLoad = desiredTiles.Except(serverLoaded).ToList();
+        var toUnload = serverLoaded.Except(desiredTiles).ToList();
 
         ServerQueuedLoads = toLoad.Count;
         
         foreach (var path in toLoad)
         {
-            yield return LoadTileServer(path);
+            yield return loader.Load(path, true, logActions);
             ServerQueuedLoads = Mathf.Max(0, ServerQueuedLoads - 1);
         }
 
         foreach (var path in toUnload)
         {
-            yield return UnloadTileServer(path);
+            yield return loader.Unload(path, true, logActions);
         }
 
         serverLoaded.Clear();
-        foreach (var path in desired)
+        foreach (var path in desiredTiles)
         {
             if (SceneManager.GetSceneByPath(path).isLoaded)
             {
@@ -242,85 +221,6 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             RpcSyncSceneSet(serverLoaded.ToArray());
         }
-    }
-
-    private IEnumerator LoadTileServer(string path)
-    {
-        if (string.IsNullOrEmpty(path) || serverLoaded.Contains(path))
-        {
-            yield break;
-        }
-
-        var existing = SceneManager.GetSceneByPath(path);
-        if (existing.isLoaded)
-        {
-            if (logActions)
-            {
-                Debug.Log($"[TileStream] Server already has {path} loaded");
-            }
-            yield break;
-        }
-
-        yield return EnsureMasterTerrainDisabled();
-
-        var op = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
-        if (op == null)
-        {
-            Debug.LogWarning($"[TileStream] Failed to start loading scene {path}");
-            yield break;
-        }
-
-        if (logActions)
-        {
-            Debug.Log($"[TileStream] Server loading {path}");
-        }
-
-        while (!op.isDone)
-        {
-            yield return null;
-        }
-
-        var scene = SceneManager.GetSceneByPath(path);
-        while (!scene.isLoaded)
-        {
-            yield return null;
-            scene = SceneManager.GetSceneByPath(path);
-        }
-        
-        WireTerrainNeighbors(path);
-
-        NetworkServer.SpawnObjects();
-        IncrementServerLoadsThisFrame();
-    }
-
-    private IEnumerator UnloadTileServer(string path)
-    {
-        var scene = SceneManager.GetSceneByPath(path);
-        if (!scene.isLoaded)
-        {
-            yield break;
-        }
-
-        if (logActions)
-        {
-            Debug.Log($"[TileStream] Server unloading {path}");
-        }
-        
-        UnwireNeighbors(path);
-
-        var op = SceneManager.UnloadSceneAsync(scene);
-        if (op == null)
-        {
-            Debug.LogWarning($"[TileStream] Failed to start unloading scene {path}");
-            yield break;
-        }
-
-        while (!op.isDone)
-        {
-            yield return null;
-        }
-        
-        
     }
 
     [ClientRpc(channel = Channels.Reliable)]
@@ -356,13 +256,13 @@ public class TileStreamCoordinator : NetworkBehaviour
         
         foreach (var path in toLoad)
         {
-            yield return LoadTileClient(path);
+            yield return loader.Load(path, false, logActions);
             ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
         }
 
         foreach (var path in toUnload)
         {
-            yield return UnloadTileClient(path);
+            yield return loader.Unload(path, false, logActions);
         }
 
         clientLoaded.Clear();
@@ -375,143 +275,10 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     }
 
-    private IEnumerator LoadTileClient(string path)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            yield break;
-        }
-
-        var scene = SceneManager.GetSceneByPath(path);
-        if (scene.isLoaded)
-        {
-            yield break;
-        }
-
-        yield return EnsureMasterTerrainDisabled();
-
-        var op = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
-        if (op == null)
-        {
-            Debug.LogWarning($"[TileStream] Client failed to start loading scene {path}");
-            yield break;
-        }
-
-        if (logActions)
-        {
-            Debug.Log($"[TileStream] Client loading {path}");
-        }
-
-        while (!op.isDone)
-        {
-            yield return null;
-        }
-        
-        WireTerrainNeighbors(path);
-        
-        IncrementClientLoadsThisFrame();
-    }
-
-    private IEnumerator UnloadTileClient(string path)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            yield break;
-        }
-
-        var scene = SceneManager.GetSceneByPath(path);
-        if (!scene.isLoaded)
-        {
-            yield break;
-        }
-        
-        if (logActions)
-        {
-            Debug.Log($"[TileStream] Client unloading {path}");
-        }
-        
-        UnwireNeighbors(path);
-
-        var op = SceneManager.UnloadSceneAsync(scene);
-        if (op == null)
-        {
-            Debug.LogWarning($"[TileStream] Client failed to start unloading scene {path}");
-            yield break;
-        }
-
-        while (!op.isDone)
-        {
-            yield return null;
-        }
-    }
-
-    private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
-    {
-        if (index == null)
-        {
-            return;
-        }
-
-        var tiles = index.Tiles;
-        for (int i = 0; i < tiles.Count; ++i)
-        {
-            var record = tiles[i];
-            if (string.IsNullOrEmpty(record.scenePath))
-            {
-                continue;
-            }
-
-            float sqrDistance = record.worldBounds.SqrDistance(position);
-            if (sqrDistance <= radiusSquared)
-            {
-                destination.Add(record.scenePath);
-            }
-        }
-    }
-
-    private void MaintainHysteresis(HashSet<string> currentTiles, HashSet<string> desiredTiles, IList<Vector3> playerPositions)
-    {
-        if (index == null)
-        {
-            return;
-        }
-
-        foreach (var path in currentTiles)
-        {
-            if (desiredTiles.Contains(path))
-            {
-                continue;
-            }
-
-            if (!index.TryGetByScene(path, out var record))
-            {
-                continue;
-            }
-
-            Vector3 center = record.worldBounds.center;
-            for (int i = 0; i < playerPositions.Count; ++i)
-            {
-                if ((center - playerPositions[i]).sqrMagnitude <= unloadRadiusSquared)
-                {
-                    desiredTiles.Add(path);
-                    break;
-                }
-            }
-        }
-    }
-
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
         Transform target = player != null ? player : offlineTarget;
-        if (target == null && !Application.isPlaying)
-        {
-            var camera = Camera.main;
-            if (camera != null)
-            {
-                target = camera.transform;
-            }
-        }
 
         if (target == null)
         {
@@ -527,7 +294,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     
     private void OnEnable()
     {
-        AutoAssignReferences();
+        InitializeReferences();
         
         // Offline mode: run when Mirror is not active
         if (offlineStandalone && !NetworkServer.active && !NetworkClient.active && index != null)
@@ -559,7 +326,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         while (isActiveAndEnabled && !NetworkServer.active && !NetworkClient.active)
         {
-            Transform t = offlineTarget != null ? offlineTarget : (player != null ? player : (Camera.main != null ? Camera.main.transform : null));
+            Transform t = offlineTarget != null ? offlineTarget : player;
             if (t == null || index == null)
             {
                 ClientQueuedLoads = 0;
@@ -569,15 +336,10 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             UpdateRadiusCache();
 
-            desired.Clear();
-            AddTilesWithinRadius(t.position, desired, loadRadiusSquared);
+            tempPlayerPositions.Clear();
+            tempPlayerPositions.Add(t.position);
 
-            if (edgeBuffer > 0f)
-            {
-                tempPlayerPositions.Clear();
-                tempPlayerPositions.Add(t.position);
-                MaintainHysteresis(clientLoaded, desired, tempPlayerPositions);
-            }
+            streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired);
 
             var toLoad = desired.Except(clientLoaded).ToList();
             var toUnload = clientLoaded.Except(desired).ToList();
@@ -586,12 +348,12 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             foreach (var path in toLoad)
             {
-                yield return LoadTileClient(path);
+                yield return loader.Load(path, false, logActions);
                 ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
             }
 
             foreach (var path in toUnload)
-                yield return UnloadTileClient(path);
+                yield return loader.Unload(path, false, logActions);
 
             clientLoaded.Clear();
             foreach (var path in desired)
@@ -604,57 +366,31 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     }
 
-    private void AutoAssignReferences()
+    private void InitializeReferences()
     {
-        if (player == null)
+        if (player == null && NetworkClient.active && NetworkClient.localPlayer != null)
         {
-            player = FindPlayerTransform();
+            player = NetworkClient.localPlayer.transform;
         }
 
-        if (masterTerrain == null)
-        {
-            masterTerrain = FindMasterTerrain();
-        }
-
-        CacheMasterTerrainScene();
-    }
-
-    private Transform FindPlayerTransform()
-    {
-        if (NetworkClient.active && NetworkClient.localPlayer != null)
-        {
-            return NetworkClient.localPlayer.transform;
-        }
-
-        if (NetworkServer.active)
+        if (player == null && NetworkServer.active)
         {
             foreach (var conn in NetworkServer.connections.Values)
             {
                 if (conn?.identity != null)
                 {
-                    return conn.identity.transform;
+                    player = conn.identity.transform;
+                    break;
                 }
             }
         }
 
-        var taggedPlayer = GameObject.FindGameObjectWithTag("Player");
-        if (taggedPlayer != null)
+        if (offlineTarget == null && player != null)
         {
-            return taggedPlayer.transform;
+            offlineTarget = player;
         }
 
-        var identity = FindObjectsOfType<NetworkIdentity>().FirstOrDefault(i => i != null && i.isLocalPlayer);
-        return identity != null ? identity.transform : null;
-    }
-
-    private Terrain FindMasterTerrain()
-    {
-        if (Terrain.activeTerrain != null)
-        {
-            return Terrain.activeTerrain;
-        }
-
-        return FindObjectsOfType<Terrain>().FirstOrDefault();
+        CacheMasterTerrainScene();
     }
     
     private void CacheMasterTerrainScene()
@@ -724,12 +460,100 @@ public class TileStreamCoordinator : NetworkBehaviour
         masterWorkRunning = false;
     }
 
+    private IEnumerator LoadSceneInternal(string path, bool isServer, bool log)
+    {
+        if (string.IsNullOrEmpty(path)) yield break;
+        if (index == null)
+        {
+            Debug.LogWarning("[TileStream] Cannot load tiles without a TileIndex assigned.");
+            yield break;
+        }
+
+        if (!index.TryGetByScene(path, out var record))
+        {
+            Debug.LogWarning($"[TileStream] Unknown tile scene {path}");
+            yield break;
+        }
+
+        var existing = SceneManager.GetSceneByPath(path);
+        if (existing.isLoaded)
+        {
+            liveTiles[path] = new TileInstance(record, existing);
+            yield break;
+        }
+
+        if (log)
+        {
+            Debug.Log($"[TileStream] {(isServer ? "Server" : "Client")} loading {path}");
+        }
+
+        var op = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
+        if (op == null)
+        {
+            Debug.LogWarning($"[TileStream] Failed to start loading scene {path}");
+            yield break;
+        }
+
+        while (!op.isDone)
+        {
+            yield return null;
+        }
+
+        var scene = SceneManager.GetSceneByPath(path);
+        while (!scene.isLoaded)
+        {
+            yield return null;
+            scene = SceneManager.GetSceneByPath(path);
+        }
+
+        liveTiles[path] = new TileInstance(record, scene);
+        WireTerrainNeighbors(path);
+
+        if (isServer)
+        {
+            NetworkServer.SpawnObjects();
+            IncrementServerLoadsThisFrame();
+        }
+        else
+        {
+            IncrementClientLoadsThisFrame();
+        }
+    }
+
+    private IEnumerator UnloadSceneInternal(string path, bool isServer, bool log)
+    {
+        var scene = SceneManager.GetSceneByPath(path);
+        if (!scene.isLoaded)
+        {
+            yield break;
+        }
+
+        if (log)
+        {
+            Debug.Log($"[TileStream] {(isServer ? "Server" : "Client")} unloading {path}");
+        }
+
+        UnwireNeighbors(path);
+
+        var op = SceneManager.UnloadSceneAsync(scene);
+        if (op == null)
+        {
+            Debug.LogWarning($"[TileStream] Failed to start unloading scene {path}");
+            yield break;
+        }
+
+        while (!op.isDone)
+        {
+            yield return null;
+        }
+    }
+
     private IEnumerator UnloadAllTiles(HashSet<string> tiles, bool isServer)
     {
         var paths = tiles.ToList();
         foreach (var path in paths)
         {
-            yield return isServer ? UnloadTileServer(path) : UnloadTileClient(path);
+            yield return loader.Unload(path, isServer, logActions);
         }
 
         tiles.Clear();
@@ -839,5 +663,133 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         return SceneManager.CreateScene("TileStream_TempActive");
+    }
+
+    private sealed class TileInstance
+    {
+        public TileIndex.TileRecord Record { get; }
+        public Scene Scene { get; }
+
+        public TileInstance(TileIndex.TileRecord record, Scene scene)
+        {
+            Record = record;
+            Scene = scene;
+        }
+    }
+
+    private sealed class TileLoader
+    {
+        private readonly TileStreamCoordinator owner;
+        private readonly Dictionary<string, TileInstance> live;
+
+        public TileLoader(TileStreamCoordinator owner, Dictionary<string, TileInstance> live)
+        {
+            this.owner = owner;
+            this.live = live;
+        }
+
+        public IEnumerator Load(string path, bool isServer, bool log)
+        {
+            if (string.IsNullOrEmpty(path)) yield break;
+            if (live.ContainsKey(path) && live[path].Scene.isLoaded) yield break;
+
+            var existing = SceneManager.GetSceneByPath(path);
+            if (existing.isLoaded)
+            {
+                if (owner.index != null && owner.index.TryGetByScene(path, out var record))
+                {
+                    live[path] = new TileInstance(record, existing);
+                    owner.WireTerrainNeighbors(path);
+                    if (isServer) owner.IncrementServerLoadsThisFrame(); else owner.IncrementClientLoadsThisFrame();
+                }
+                yield break;
+            }
+
+            yield return owner.EnsureMasterTerrainDisabled();
+            yield return owner.LoadSceneInternal(path, isServer, log);
+        }
+
+        public IEnumerator Unload(string path, bool isServer, bool log)
+        {
+            if (string.IsNullOrEmpty(path)) yield break;
+            if (!live.ContainsKey(path)) yield break;
+
+            yield return owner.EnsureMasterTerrainDisabled();
+            yield return owner.UnloadSceneInternal(path, isServer, log);
+            live.Remove(path);
+        }
+    }
+
+    private sealed class TileStreamer
+    {
+        private readonly TileIndex index;
+        private readonly List<Vector3> cachedPositions = new();
+
+        public TileStreamer(TileIndex index)
+        {
+            this.index = index;
+        }
+
+        public void ComputeDesired(IEnumerable<Vector3> positions, float loadRadiusSquared, float unloadRadiusSquared, HashSet<string> current, HashSet<string> output)
+        {
+            output.Clear();
+            if (index == null) return;
+
+            cachedPositions.Clear();
+            foreach (var pos in positions)
+            {
+                cachedPositions.Add(pos);
+                AddTilesWithinRadius(pos, output, loadRadiusSquared);
+            }
+
+            if (cachedPositions.Count > 0 && unloadRadiusSquared > loadRadiusSquared)
+            {
+                MaintainHysteresis(current, output, cachedPositions, unloadRadiusSquared);
+            }
+        }
+
+        private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
+        {
+            var tiles = index.Tiles;
+            for (int i = 0; i < tiles.Count; ++i)
+            {
+                var record = tiles[i];
+                if (string.IsNullOrEmpty(record.scenePath))
+                {
+                    continue;
+                }
+
+                if (record.worldBounds.SqrDistance(position) <= radiusSquared)
+                {
+                    destination.Add(record.scenePath);
+                }
+            }
+        }
+
+        private void MaintainHysteresis(HashSet<string> currentTiles, HashSet<string> desiredTiles, IList<Vector3> playerPositions, float unloadRadiusSquared)
+        {
+            foreach (var path in currentTiles)
+            {
+                if (desiredTiles.Contains(path))
+                {
+                    continue;
+                }
+
+                if (!index.TryGetByScene(path, out var record))
+                {
+                    continue;
+                }
+
+                Vector3 center = record.worldBounds.center;
+                for (int i = 0; i < playerPositions.Count; ++i)
+                {
+                    if ((center - playerPositions[i]).sqrMagnitude <= unloadRadiusSquared)
+                    {
+                        desiredTiles.Add(path);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }

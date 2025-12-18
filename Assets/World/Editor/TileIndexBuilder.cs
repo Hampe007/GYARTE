@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 public static class TileIndexBuilder
 {
     private const string AssetPath = "Assets/World/Resources/TileIndex.asset";
+    private const float DefaultVerticalPadding = 4000f;
 
     // Matches ..._Tile_<x>_<y> or ..._tile_<x>_<y>
     private static readonly Regex NamePattern = new(
@@ -50,9 +51,9 @@ public static class TileIndexBuilder
         }
 
         // Use a generous vertical size so bounds-based distance checks include flying cameras/players
-        var boundsSize = new Vector3(size.x, Mathf.Max(size.x, 2000f), size.y);
+        var boundsSize = new Vector3(size.x, Mathf.Max(size.x, DefaultVerticalPadding), size.y);
 
-        var candidates = new List<(Vector2Int coord, string path)>();
+        var candidates = new List<(Vector2Int coord, string path, string label)>();
         int skippedName = 0;
 
         foreach (var guid in guids)
@@ -71,7 +72,8 @@ public static class TileIndexBuilder
 
             int x = int.Parse(m.Groups["x"].Value);
             int y = int.Parse(m.Groups["y"].Value);
-            candidates.Add((new Vector2Int(x, y), path));
+            string label = m.Groups["prefix"].Value;
+            candidates.Add((new Vector2Int(x, y), path, label));
         }
 
         if (candidates.Count == 0)
@@ -81,14 +83,15 @@ public static class TileIndexBuilder
         }
 
         // Resolve duplicates per coord
-        var chosen = new Dictionary<Vector2Int, string>();
+        var chosen = new Dictionary<Vector2Int, (string path, string label)>();
         var dups = new Dictionary<Vector2Int, List<string>>();
 
         foreach (var g in candidates.GroupBy(c => c.coord))
         {
             if (g.Count() == 1)
             {
-                chosen[g.Key] = g.First().path;
+                var single = g.First();
+                chosen[g.Key] = (single.path, single.label);
                 continue;
             }
 
@@ -100,7 +103,8 @@ public static class TileIndexBuilder
             else
                 pick = paths.OrderBy(p => p).First(); // stable but shallow
 
-            chosen[g.Key] = pick;
+            var chosenLabel = g.First(v => v.path == pick).label;
+            chosen[g.Key] = (pick, chosenLabel);
             dups[g.Key] = paths;
         }
 
@@ -112,7 +116,8 @@ public static class TileIndexBuilder
         foreach (var kv in chosen)
         {
             var coord = kv.Key;
-            var path = kv.Value;
+            var path = kv.Value.path;
+            var terrainLabel = kv.Value.label;
             
             Vector3 center;
             using (new SceneLoadScope(path))
@@ -137,7 +142,7 @@ public static class TileIndexBuilder
                         Debug.LogWarning($"[TileIndexBuilder] Tile {coord} has origin offset {candidateOrigin} that differs from {originOffset}. Using first origin.");
                     }
 
-                    center = pos + new Vector3(size.x * 0.5f, 0f, size.y * 0.5f);
+                    center = pos + new Vector3(size.x * 0.5f, terrain.terrainData != null ? terrain.terrainData.size.y * 0.5f : 0f, size.y * 0.5f);
                 }
                 else
                 {
@@ -147,11 +152,27 @@ public static class TileIndexBuilder
 
             var bounds = new Bounds(center, boundsSize);
 
+            string propDataPath = string.Empty;
+            var sceneDir = Path.GetDirectoryName(path)?.Replace("\\", "/");
+            var rootDir = string.IsNullOrEmpty(sceneDir) ? string.Empty : Path.GetDirectoryName(sceneDir)?.Replace("\\", "/");
+            if (!string.IsNullOrEmpty(rootDir))
+            {
+                string guess = Path.Combine(rootDir, "Props", $"Props_{terrainLabel}_{coord.x}_{coord.y}.asset").Replace("\\", "/");
+                if (File.Exists(guess))
+                {
+                    propDataPath = guess;
+                }
+            }
+
             records.Add(new TileIndex.TileRecord
             {
                 coord = coord,
                 scenePath = path,
-                worldBounds = bounds
+                worldBounds = bounds,
+                worldOrigin = new Vector3(coord.x * size.x + originOffset.x, 0f, coord.y * size.y + originOffset.y),
+                tileSize = new Vector3(size.x, boundsSize.y, size.y),
+                propRootName = TileRuntimeConstants.PropRootPrefix + coord.x + "_" + coord.y,
+                propDataPath = propDataPath
             });
         }
 
