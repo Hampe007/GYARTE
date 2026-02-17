@@ -24,6 +24,8 @@ MonoBehaviour:
   masterForceSquareTiles: 1
   evenFitNoRemainder: 1
   forceSquareTiles: 1
+  maxTilesPerAxis: 128
+  maxTilesPerTerrain: 4096
   sceneNamePattern: '{t}_Tile_{x}_{y}'
   outputFolder: Assets/Tiles
   terrainDataPrefix: TD_

@@ -32,7 +32,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     private readonly Dictionary<string, string> _gizmoStatus = new(32);
 
     [SerializeField] private TileSliceSettings settings;
-    [SerializeField] private string folder = "Assets/Level/Scenes/Tiles/";
+    [SerializeField, HideInInspector] [Obsolete("Legacy field. Use outputFolder from the inspector.")] private string folder = "Assets/Level/Scenes/Tiles/";
     
     // Source (multi-terrain)
     [SerializeField] private bool autoCollectTerrains = true;
@@ -54,6 +54,8 @@ public sealed class TileSceneGenerator : ScriptableObject
     
     [SerializeField] private bool evenFitNoRemainder = true; // adjust size so terrain divides evenly
     [SerializeField] private bool forceSquareTiles   = true; // when even-fit, make tiles perfect squares
+    [SerializeField] private int maxTilesPerAxis = 128;
+    [SerializeField] private int maxTilesPerTerrain = 4096;
 
     // Output
     [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
@@ -315,10 +317,6 @@ public sealed class TileSceneGenerator : ScriptableObject
 
         if (roots.Count == 0)
             roots.Add(configuredRoot);
-
-        string legacyFolder = NormalizeAssetPath(folder);
-        if (!string.IsNullOrWhiteSpace(legacyFolder) && legacyFolder.StartsWith("Assets", StringComparison.Ordinal))
-            roots.Add(legacyFolder);
 
         string[] rootFolders = roots.ToArray();
 
@@ -1389,6 +1387,8 @@ public sealed class TileSceneGenerator : ScriptableObject
 
         float finalX = sz.x / tilesX;
         float finalY = sz.z / tilesY;
+        
+        ValidateTileCountBudget(tilesX, tilesY);
 
         // Persist exact results (origin filled later)
         if (settings)
@@ -1422,6 +1422,27 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
 
         _terrainLog.AppendLine($"{_currentTerrainLabel}: {tilesX}×{tilesY} tiles, size {finalX:0.##}×{finalY:0.##} m (desired {tileSizeMeters:0.##}, master={isMaster}).");
+    }
+    
+    private void ValidateTileCountBudget(int countX, int countY)
+    {
+        int axisLimit = Mathf.Max(1, maxTilesPerAxis);
+        int totalLimit = Mathf.Max(1, maxTilesPerTerrain);
+
+        if (countX > axisLimit || countY > axisLimit)
+        {
+            throw new InvalidOperationException(
+                $"Terrain '{_currentTerrainLabel}' resolves to {countX}×{countY} tiles, which exceeds Max Tiles Per Axis ({axisLimit}). " +
+                "Increase tile size or raise the safety limit in Advanced Options.");
+        }
+
+        long total = (long)countX * countY;
+        if (total > totalLimit)
+        {
+            throw new InvalidOperationException(
+                $"Terrain '{_currentTerrainLabel}' resolves to {countX}×{countY} = {total} tiles, which exceeds Max Tiles Per Terrain ({totalLimit}). " +
+                "Increase tile size or raise the safety limit in Advanced Options.");
+        }
     }
     
     private bool IsMasterTerrain(string label)
@@ -1591,6 +1612,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
         _outputScenesFolder = scenesFolder;
         _outputDataFolder   = dataFolder;
+        _outputPropsFolder  = propsFolder;
         _outputWriteFoldersEnsured = false;
     }
 
@@ -1608,9 +1630,16 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private static void EnsureFolder(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Folder path cannot be null or empty.", nameof(path));
+        
         if (AssetDatabase.IsValidFolder(path)) return;
         var parent = Path.GetDirectoryName(path)?.Replace("\\", "/");
         var leaf = Path.GetFileName(path);
+        
+        if (string.IsNullOrWhiteSpace(parent) || string.IsNullOrWhiteSpace(leaf))
+            throw new ArgumentException($"Invalid folder path: '{path}'.", nameof(path));
+        
         if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
             EnsureFolder(parent);
         AssetDatabase.CreateFolder(parent, leaf);

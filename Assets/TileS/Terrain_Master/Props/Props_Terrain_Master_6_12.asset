@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26ba79b91b4a43d899faf376128c91c0, type: 3}
+  m_Name: Props_Terrain_Master_6_12
+  m_EditorClassIdentifier: 
+  coord: {x: 6, y: 12}
+  tileOrigin: {x: 1875, y: -2, z: 3750}
+  tileSize: {x: 312.5, y: 1000, z: 312.5}
+  groups:
+  - prefab: {fileID: 5843053274869734109, guid: a8cba9e6a735524498dace46cd048d13, type: 3}
+    transforms:
+    - localPosition: {x: 87.785034, y: 58.61773, z: 312.46704}
+      localRotation: {x: -0, y: -0.9967397, z: -0, w: -0.08068565}
+      localScale: {x: 1.0000006, y: 1, z: 1.0000006}
+  - prefab: {fileID: 8128240714911673486, guid: c598fde42bf9cb941befa1a4f2915924, type: 3}
+    transforms:
+    - localPosition: {x: 153.40002, y: 59.91484, z: 274.1001}
+      localRotation: {x: -0, y: 0.47305882, z: -0, w: 0.88103086}
+      localScale: {x: 1.0000001, y: 1, z: 1.0000001}
+    - localPosition: {x: 161.95374, y: 60.108734, z: 307.76}
+      localRotation: {x: -0, y: -0.9022657, z: -0, w: 0.43118045}
+      localScale: {x: 1.0000001, y: 1, z: 1.0000001}
+  - prefab: {fileID: 8943019165692843693, guid: ab3b8f4178c4e694385348cb487a741a, type: 3}
+    transforms:
+    - localPosition: {x: 137.40002, y: 59.2322, z: 307.1001}
+      localRotation: {x: -0, y: 0.69354784, z: -0, w: 0.72041065}
+      localScale: {x: 1.0000002, y: 1, z: 1.0000002}

@@ -184,11 +184,26 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
     {
         DrawSectionHeader("Advanced Options","Control reslice behavior, build settings integration, and optimization rules.");
         
-        EditorGUILayout.PropertyField(Find("nonDestructiveReslice"), new GUIContent("Non-Destructive Re-slice", "Update tile terrain data in place while preserving other scene content."));
-        EditorGUILayout.PropertyField(Find("onlyUpdateIfChanged"), new GUIContent("Only Update If Changed (heights)", "Skip tiles whose heightmap is unchanged for faster reslices."));
-        EditorGUILayout.PropertyField(Find("addToBuildSettings"), new GUIContent("Ensure In Build Settings", "Add generated tile scenes to Build Settings automatically."));
-        EditorGUILayout.PropertyField(Find("clearConsoleBeforeActions"), new GUIContent("Clear Console Before Actions", "Optional: clear Unity Console at action start. Disable to preserve multi-step debugging history."));
+        bool previousWideMode = EditorGUIUtility.wideMode;
+        float previousLabelWidth = EditorGUIUtility.labelWidth;
+        try
+        {
+            EditorGUIUtility.wideMode = false;
+            EditorGUIUtility.labelWidth = 230f;
 
+            EditorGUILayout.PropertyField(Find("nonDestructiveReslice"), new GUIContent("Non-Destructive Re-slice", "Update tile terrain data in place while preserving other scene content."));
+            EditorGUILayout.PropertyField(Find("onlyUpdateIfChanged"), new GUIContent("Only Update If Changed (heights)", "Skip tiles whose heightmap is unchanged for faster reslices."));
+            EditorGUILayout.PropertyField(Find("addToBuildSettings"), new GUIContent("Ensure In Build Settings", "Add generated tile scenes to Build Settings automatically."));
+            EditorGUILayout.PropertyField(Find("maxTilesPerAxis"), new GUIContent("Max Tiles Per Axis", "Safety cap to prevent accidental generation of extreme tile counts that can freeze or crash the Unity Editor."));
+            EditorGUILayout.PropertyField(Find("maxTilesPerTerrain"), new GUIContent("Max Tiles Per Terrain", "Safety cap for total tiles per terrain. Prevents runaway slice jobs when tile size is set too small."));
+            EditorGUILayout.PropertyField(Find("clearConsoleBeforeActions"), new GUIContent("Clear Console Before Actions", "Optional: clear Unity Console at action start. Disable to preserve multi-step debugging history."));
+        }
+        finally
+        {
+            EditorGUIUtility.wideMode = previousWideMode;
+            EditorGUIUtility.labelWidth = previousLabelWidth;
+        }
+        
         if (GUILayout.Button(new GUIContent("Clean Build Settings", "Remove missing scene entries from Build Settings.")))
             generator.CleanBuildSettingsWithDialog();
     }

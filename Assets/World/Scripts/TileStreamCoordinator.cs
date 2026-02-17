@@ -49,6 +49,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     [SerializeField] private Terrain masterTerrain;
     [SerializeField] private bool disableMasterOnStart = true;
     [SerializeField] private bool unloadMasterTerrainScene = true;
+    [SerializeField] private bool unloadAllTerrainScenesOnStart = true;
 
     private string masterTerrainScenePath = string.Empty;
     private bool masterSceneUnloaded;
@@ -56,6 +57,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     private bool masterDisabled;
     private bool masterWorkRunning;
     private bool firstTileLoadConfirmed;
+    private bool startupTerrainsHandled;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -468,59 +470,93 @@ public class TileStreamCoordinator : NetworkBehaviour
             yield break;
         }
 
-        // If already done, skip.
-        bool masterAlreadyDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
-        bool masterAlreadyUnloaded = masterSceneUnloaded || string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
-
-        if (masterAlreadyDisabled && (!unloadMasterTerrainScene || masterAlreadyUnloaded))
+        if (startupTerrainsHandled)
         {
-            masterDisabled = true;
-            masterSceneUnloaded = unloadMasterTerrainScene ? true : masterSceneUnloaded;
             yield break;
         }
 
         masterWorkRunning = true;
 
-        if (masterTerrain != null && disableMasterOnStart && masterTerrain.gameObject.activeSelf)
+        yield return DisableAndUnloadStartupTerrains();
+
+        startupTerrainsHandled = true;
+        masterDisabled = true;
+        masterSceneUnloaded = true;
+
+        masterWorkRunning = false;
+    }
+
+    private IEnumerator DisableAndUnloadStartupTerrains()
+    {
+        var terrains = Object.FindObjectsByType<Terrain>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        var scenesToUnload = new HashSet<string>();
+        var coordinatorScenePath = gameObject.scene.path;
+
+        foreach (var terrain in terrains)
         {
-            masterTerrain.gameObject.SetActive(false);
-            masterDisabled = true;
+            if (terrain == null)
+            {
+                continue;
+            }
+
+            if (disableMasterOnStart && terrain.gameObject.activeSelf)
+            {
+                terrain.gameObject.SetActive(false);
+            }
+
+            if (!unloadAllTerrainScenesOnStart || !unloadMasterTerrainScene)
+            {
+                continue;
+            }
+
+            var scene = terrain.gameObject.scene;
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(coordinatorScenePath) && scene.path == coordinatorScenePath)
+            {
+                continue;
+            }
+
+            if (index != null && index.TryGetByScene(scene.path, out _))
+            {
+                continue;
+            }
+
+            scenesToUnload.Add(scene.path);
         }
 
-        if (unloadMasterTerrainScene && !masterSceneUnloaded && !string.IsNullOrEmpty(masterTerrainScenePath))
+        foreach (var path in scenesToUnload)
         {
-            var scene = SceneManager.GetSceneByPath(masterTerrainScenePath);
+            var scene = SceneManager.GetSceneByPath(path);
 
             if (!scene.IsValid() || !scene.isLoaded)
             {
-                masterSceneUnloaded = true;
+                continue;
             }
-            else
+
+            if (scene == SceneManager.GetActiveScene())
             {
-                // If master is active, switch to a safe scene first
-                if (scene == SceneManager.GetActiveScene())
+                Scene tempActive = GetOrCreateTemporaryActiveScene();
+                if (tempActive.IsValid() && tempActive.isLoaded)
                 {
-                    Scene tempActive = GetOrCreateTemporaryActiveScene();
-                    if (tempActive.IsValid() && tempActive.isLoaded)
-                    {
-                        SceneManager.SetActiveScene(tempActive);
-                    }
+                    SceneManager.SetActiveScene(tempActive);
                 }
+            }
 
-                var op = SceneManager.UnloadSceneAsync(scene);
-                if (op != null)
-                {
-                    while (!op.isDone)
-                    {
-                        yield return null;
-                    }
-                }
+            var op = SceneManager.UnloadSceneAsync(scene);
+            if (op == null)
+            {
+                continue;
+            }
 
-                masterSceneUnloaded = true;
+            while (!op.isDone)
+            {
+                yield return null;
             }
         }
-
-        masterWorkRunning = false;
     }
     
     private bool ShouldDisableMasterTerrainNow()
