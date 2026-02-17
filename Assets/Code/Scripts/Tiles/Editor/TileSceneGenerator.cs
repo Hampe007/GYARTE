@@ -362,6 +362,27 @@ public sealed class TileSceneGenerator : EditorWindow
         {
             RemoveMissingScenesFromBuildSettings(true);
         }
+        
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Generated Output Cleanup", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "Use these tools to reveal or delete generated tile scenes and tile asset output folders derived from current settings.",
+            MessageType.None);
+
+        using (new EditorGUI.DisabledScope(_isRunning))
+        {
+            if (GUILayout.Button("Reveal Output Folder"))
+                RevealGeneratedOutputFolder();
+
+            if (GUILayout.Button("Delete Generated Tile Scenes"))
+                DeleteGeneratedTileScenesWithConfirmation();
+
+            if (GUILayout.Button("Delete Generated TerrainData/Assets"))
+                DeleteGeneratedTileAssetsWithConfirmation();
+
+            if (GUILayout.Button("Delete ALL Generated Tile Output"))
+                DeleteAllGeneratedOutputWithConfirmation();
+        }
 
         EditorGUILayout.Space();
         using (new EditorGUI.DisabledScope(!CanRun()))
@@ -402,6 +423,596 @@ public sealed class TileSceneGenerator : EditorWindow
         if (autoCollectTerrains) return (Terrain.activeTerrains?.Length ?? 0) > 0;
         return sourceTerrains != null && sourceTerrains.Any(t => t != null);
     }
+    
+    private const string LegacyTilesScenesRoot = "Assets/Level/Scenes/Tiles";
+    private const string TileSceneNameRegex = ".*Tile.*";
+    
+    #region Generated Output Cleanup
+    private readonly struct GeneratedOutputPaths
+    {
+        public readonly string ConfiguredRoot;
+        public readonly string[] Roots;
+        public readonly string[] SceneFolders;
+        public readonly string[] TerrainDataFolders;
+        public readonly string[] PropsFolders;
+        public readonly string[] SearchSeeds;
+
+        public GeneratedOutputPaths(string configuredRoot, string[] roots, string[] sceneFolders, string[] terrainDataFolders, string[] propsFolders, string[] searchSeeds)
+        {
+            ConfiguredRoot = configuredRoot;
+            Roots = roots;
+            SceneFolders = sceneFolders;
+            TerrainDataFolders = terrainDataFolders;
+            PropsFolders = propsFolders;
+            SearchSeeds = searchSeeds;
+        }
+
+        public string[] GetAllFolders()
+        {
+            var all = new List<string>(Roots.Length + SceneFolders.Length + TerrainDataFolders.Length + PropsFolders.Length);
+            all.AddRange(Roots);
+            all.AddRange(SceneFolders);
+            all.AddRange(TerrainDataFolders);
+            all.AddRange(PropsFolders);
+            return all.Where(f => !string.IsNullOrWhiteSpace(f)).Distinct().ToArray();
+        }
+    }
+
+    private GeneratedOutputPaths CollectGeneratedOutputPaths()
+    {
+        string configuredRoot = NormalizeAssetPath(outputFolder);
+        if (string.IsNullOrWhiteSpace(configuredRoot) || !configuredRoot.StartsWith("Assets", StringComparison.Ordinal))
+            return new GeneratedOutputPaths(configuredRoot, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+
+        var roots = new HashSet<string>(StringComparer.Ordinal);
+
+        if (subfolderPerTerrain)
+        {
+            var snapshots = CollectSnapshots(onlySnapshotList: true);
+            foreach (var snap in snapshots)
+            {
+                if (snap == null || string.IsNullOrWhiteSpace(snap.label))
+                    continue;
+
+                roots.Add(NormalizeAssetPath($"{configuredRoot}/{snap.label}"));
+            }
+        }
+        else
+        {
+            roots.Add(configuredRoot);
+        }
+
+        if (roots.Count == 0)
+            roots.Add(configuredRoot);
+
+        string legacyFolder = NormalizeAssetPath(folder);
+        if (!string.IsNullOrWhiteSpace(legacyFolder) && legacyFolder.StartsWith("Assets", StringComparison.Ordinal))
+            roots.Add(legacyFolder);
+
+        string[] rootFolders = roots.ToArray();
+
+        // Scene folders = generated roots + legacy tiles scene folder.
+        var sceneFoldersSet = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in rootFolders)
+            sceneFoldersSet.Add(NormalizeAssetPath($"{r}/Scenes"));
+
+        string legacyTilesScenes = NormalizeAssetPath(LegacyTilesScenesRoot);
+        if (!string.IsNullOrWhiteSpace(legacyTilesScenes) && legacyTilesScenes.StartsWith("Assets", StringComparison.Ordinal))
+            sceneFoldersSet.Add(legacyTilesScenes);
+
+        string[] sceneFolders = sceneFoldersSet.ToArray();
+
+        string[] terrainDataFolders = rootFolders.Select(r => NormalizeAssetPath($"{r}/TerrainData")).ToArray();
+        string[] propsFolders = rootFolders.Select(r => NormalizeAssetPath($"{r}/Props")).ToArray();
+        var searchSeeds = BuildSearchSeedFolders(configuredRoot, rootFolders);
+
+        return new GeneratedOutputPaths(configuredRoot, rootFolders, sceneFolders, terrainDataFolders, propsFolders, searchSeeds);
+    }
+
+
+    private static string NormalizeAssetPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        string p = path.Replace("\\", "/").Trim().TrimEnd('/');
+
+        // Normalize "assets/..." to "Assets/..."
+        if (p.StartsWith("assets/", StringComparison.Ordinal))
+            p = "Assets/" + p.Substring("assets/".Length);
+
+        if (p.Equals("assets", StringComparison.Ordinal))
+            p = "Assets";
+
+        return p;
+    }
+
+    private static string[] BuildSearchSeedFolders(string configuredRoot, IEnumerable<string> rootFolders)
+    {
+        var seeds = new HashSet<string>(StringComparer.Ordinal) { "Assets", configuredRoot };
+
+        foreach (var root in rootFolders)
+        {
+            string normalized = NormalizeAssetPath(root);
+            if (string.IsNullOrWhiteSpace(normalized))
+                continue;
+
+            seeds.Add(normalized);
+
+            string parent = NormalizeAssetPath(Path.GetDirectoryName(normalized));
+            if (!string.IsNullOrWhiteSpace(parent) && parent.StartsWith("Assets", StringComparison.Ordinal))
+                seeds.Add(parent);
+        }
+
+        // Ensure legacy tiles scene folder is included as a discovery seed.
+        string legacyTiles = NormalizeAssetPath(LegacyTilesScenesRoot);
+        if (!string.IsNullOrWhiteSpace(legacyTiles) && legacyTiles.StartsWith("Assets", StringComparison.Ordinal))
+        {
+            seeds.Add(legacyTiles);
+
+            string legacyParent = NormalizeAssetPath(Path.GetDirectoryName(legacyTiles));
+            if (!string.IsNullOrWhiteSpace(legacyParent) && legacyParent.StartsWith("Assets", StringComparison.Ordinal))
+                seeds.Add(legacyParent);
+        }
+
+        return seeds.Where(AssetDatabase.IsValidFolder).Distinct().ToArray();
+    }
+
+    private string[] DiscoverAdditionalSceneFolders(GeneratedOutputPaths paths)
+    {
+        var discovered = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (string seed in paths.SearchSeeds)
+        {
+            if (!AssetDatabase.IsValidFolder(seed))
+                continue;
+
+            string[] guids = AssetDatabase.FindAssets("t:Scene", new[] { seed });
+            foreach (string guid in guids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(assetPath))
+                    continue;
+
+                string sceneName = Path.GetFileNameWithoutExtension(assetPath);
+
+                if (!Regex.IsMatch(sceneName, TileSceneNameRegex, RegexOptions.IgnoreCase))
+                    continue;
+
+                string parentFolder = NormalizeAssetPath(Path.GetDirectoryName(assetPath));
+
+                if (!string.IsNullOrWhiteSpace(parentFolder) &&
+                    IsCleanupPathCompatible(paths.ConfiguredRoot, parentFolder))
+                {
+                    discovered.Add(parentFolder);
+                }
+            }
+        }
+
+        return discovered.ToArray();
+    }
+
+    private string[] DiscoverAdditionalTerrainAssetFolders(GeneratedOutputPaths paths)
+    {
+        string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
+
+        // Matches: TD_Terrain_<anything>_<x>_<y>
+        string tdRegex = $"^{escapedPrefix}Terrain_.+_\\d+_\\d+$";
+
+        // Matches: Props_<anything>_<x>_<y>
+        string propRegex = "^Props_.+_\\d+_\\d+$";
+
+        var discovered = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (string seed in paths.SearchSeeds)
+        {
+            if (!AssetDatabase.IsValidFolder(seed))
+                continue;
+
+            // TerrainData search (fast)
+            string[] tdGuids = AssetDatabase.FindAssets("t:TerrainData", new[] { seed });
+            foreach (string guid in tdGuids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(assetPath) || AssetDatabase.IsValidFolder(assetPath))
+                    continue;
+
+                string file = Path.GetFileNameWithoutExtension(assetPath);
+                if (!Regex.IsMatch(file, tdRegex, RegexOptions.IgnoreCase))
+                    continue;
+
+                string parentFolder = NormalizeAssetPath(Path.GetDirectoryName(assetPath));
+                if (!string.IsNullOrWhiteSpace(parentFolder) && IsCleanupPathCompatible(paths.ConfiguredRoot, parentFolder))
+                    discovered.Add(parentFolder);
+            }
+
+            // Also scan non-scene assets for Props_* patterns (keeps your old behavior)
+            string[] objGuids = AssetDatabase.FindAssets("t:Object", new[] { seed });
+            foreach (string guid in objGuids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(assetPath) ||
+                    AssetDatabase.IsValidFolder(assetPath) ||
+                    assetPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string file = Path.GetFileNameWithoutExtension(assetPath);
+                if (!Regex.IsMatch(file, propRegex, RegexOptions.IgnoreCase))
+                    continue;
+
+                string parentFolder = NormalizeAssetPath(Path.GetDirectoryName(assetPath));
+                if (!string.IsNullOrWhiteSpace(parentFolder) && IsCleanupPathCompatible(paths.ConfiguredRoot, parentFolder))
+                    discovered.Add(parentFolder);
+            }
+        }
+
+        return discovered.ToArray();
+    }
+
+    private static string BuildSceneNameRegex(string pattern)
+    {
+        string source = string.IsNullOrWhiteSpace(pattern) ? "{t}_Tile_{x}_{y}" : pattern;
+        string escaped = Regex.Escape(source)
+            .Replace("\\{t\\}", ".+")
+            .Replace("\\{x\\}", "\\d+")
+            .Replace("\\{y\\}", "\\d+");
+        return "^" + escaped + "$";
+    }
+
+    private static bool IsCleanupPathCompatible(string configuredRoot, string folder)
+    {
+        string root = NormalizeAssetPath(configuredRoot);
+        string candidate = NormalizeAssetPath(folder);
+
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        // Allow the legacy tiles folder explicitly.
+        string legacyTiles = NormalizeAssetPath(LegacyTilesScenesRoot);
+        if (!string.IsNullOrWhiteSpace(legacyTiles))
+        {
+            if (candidate.Equals(legacyTiles, StringComparison.Ordinal) ||
+                candidate.StartsWith(legacyTiles + "/", StringComparison.Ordinal))
+                return true;
+        }
+
+        if (candidate.Equals(root, StringComparison.Ordinal) || candidate.StartsWith(root + "/", StringComparison.Ordinal))
+            return true;
+
+        string[] rootSegments = root.Split('/');
+        string[] candidateSegments = candidate.Split('/');
+        if (rootSegments.Length < 2 || candidateSegments.Length < 2)
+            return false;
+
+        string rootTail2 = string.Join("/", rootSegments.Skip(rootSegments.Length - 2));
+        string candTail2 = string.Join("/", candidateSegments.Skip(candidateSegments.Length - 2));
+
+        return rootTail2.Equals(candTail2, StringComparison.OrdinalIgnoreCase) &&
+               candidate.IndexOf("/Tiles", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private void RevealGeneratedOutputFolder()
+    {
+        var paths = CollectGeneratedOutputPaths();
+
+        // Prefer folders that actually contain tile scenes or generated TerrainData.
+        string[] candidateFolders = paths.GetAllFolders()
+            .Concat(DiscoverAdditionalSceneFolders(paths))
+            .Concat(DiscoverAdditionalTerrainAssetFolders(paths))
+            .Distinct()
+            .ToArray();
+
+        // Try to reveal the first valid folder that has content we care about.
+        string revealTarget = null;
+
+        foreach (string folder in candidateFolders.Where(AssetDatabase.IsValidFolder))
+        {
+            bool hasTileScene = AssetDatabase.FindAssets("t:Scene", new[] { folder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Any(p =>
+                {
+                    string name = Path.GetFileNameWithoutExtension(p);
+                    return !string.IsNullOrWhiteSpace(name) &&
+                           Regex.IsMatch(name, TileSceneNameRegex, RegexOptions.IgnoreCase);
+                });
+
+            if (hasTileScene)
+            {
+                revealTarget = folder;
+                break;
+            }
+
+            bool hasTerrainData = AssetDatabase.FindAssets("t:TerrainData", new[] { folder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Any(p =>
+                {
+                    string name = Path.GetFileNameWithoutExtension(p);
+                    if (string.IsNullOrWhiteSpace(name))
+                        return false;
+
+                    string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
+                    string tdRegex = $"^{escapedPrefix}Terrain_.+_\\d+_\\d+$";
+                    return Regex.IsMatch(name, tdRegex, RegexOptions.IgnoreCase);
+                });
+
+            if (hasTerrainData)
+            {
+                revealTarget = folder;
+                break;
+            }
+        }
+
+        // Fall back to configured roots if nothing was discovered.
+        if (string.IsNullOrWhiteSpace(revealTarget))
+            revealTarget = paths.Roots.FirstOrDefault(AssetDatabase.IsValidFolder) ?? paths.ConfiguredRoot;
+
+        if (string.IsNullOrWhiteSpace(revealTarget) || !AssetDatabase.IsValidFolder(revealTarget))
+        {
+            EditorUtility.DisplayDialog("Reveal Output Folder", "Could not locate a folder containing current tiles.", "OK");
+            return;
+        }
+
+        string absolute = Path.GetFullPath(revealTarget);
+        EditorUtility.RevealInFinder(absolute);
+        Debug.Log($"[TileSceneGenerator] Revealed tile output folder: {revealTarget}");
+    }
+
+    private void DeleteGeneratedTileScenesWithConfirmation()
+    {
+        var paths = CollectGeneratedOutputPaths();
+
+        string[] discovered = DiscoverAdditionalSceneFolders(paths);
+
+        DebugLogResolvedFolders("Base Scene Folders", paths.SceneFolders);
+        DebugLogResolvedFolders("Discovered Scene Folders (Tile Regex)", discovered);
+
+        string[] sceneFolders = paths.SceneFolders
+            .Concat(discovered)
+            .Distinct()
+            .ToArray();
+
+        DebugLogResolvedFolders("Final Scene Folders Used For Deletion", sceneFolders);
+
+        if (!ValidateCleanupSafety(paths, sceneFolders, out string reason))
+        {
+            EditorUtility.DisplayDialog("Delete Generated Tile Scenes", reason, "OK");
+            return;
+        }
+
+        if (!ConfirmCleanup("Delete Generated Tile Scenes", "This will delete generated tile scene assets.", sceneFolders))
+            return;
+
+        int sceneCount = DeleteAssetsByFilter("t:Scene", sceneFolders);
+
+        DeleteEmptyFolders(sceneFolders, paths.ConfiguredRoot);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        Debug.Log($"[TileSceneGenerator] Cleanup complete. scenes deleted={sceneCount}");
+    }
+
+    private void DeleteGeneratedTileAssetsWithConfirmation()
+    {
+        var paths = CollectGeneratedOutputPaths();
+
+        string[] discovered = DiscoverAdditionalTerrainAssetFolders(paths);
+
+        DebugLogResolvedFolders("Base TerrainData Folders", paths.TerrainDataFolders);
+        DebugLogResolvedFolders("Base Props Folders", paths.PropsFolders);
+        DebugLogResolvedFolders("Discovered Terrain/Props Folders", discovered);
+
+        string[] folders = paths.TerrainDataFolders
+            .Concat(paths.PropsFolders)
+            .Concat(discovered)
+            .Distinct()
+            .ToArray();
+
+        DebugLogResolvedFolders("Final Terrain Folders Used For Deletion", folders);
+
+        if (!ValidateCleanupSafety(paths, folders, out string reason))
+        {
+            EditorUtility.DisplayDialog("Delete Generated TerrainData/Assets", reason, "OK");
+            return;
+        }
+
+        if (!ConfirmCleanup("Delete Generated TerrainData/Assets", "This will delete generated TerrainData and tile asset output.", folders))
+            return;
+
+        int terrainCount = DeleteAssetsByFilter("t:TerrainData", folders);
+        int otherAssetsCount = DeleteNonSceneAssets(folders);
+
+        DeleteEmptyFolders(folders, paths.ConfiguredRoot);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        Debug.Log($"[TileSceneGenerator] Cleanup complete. assets deleted={terrainCount + otherAssetsCount}");
+    }
+
+    private void DeleteAllGeneratedOutputWithConfirmation()
+    {
+        var paths = CollectGeneratedOutputPaths();
+        string[] folders = paths.GetAllFolders()
+            .Concat(DiscoverAdditionalSceneFolders(paths))
+            .Concat(DiscoverAdditionalTerrainAssetFolders(paths))
+            .Distinct()
+            .ToArray();
+        
+        DebugLogResolvedFolders("ALL Folders Before Delete", folders);
+
+        if (!ValidateCleanupSafety(paths, folders, out string reason))
+        {
+            EditorUtility.DisplayDialog("Delete ALL Generated Tile Output", reason, "OK");
+            return;
+        }
+
+        if (!ConfirmCleanup("Delete ALL Generated Tile Output", "This will delete generated scenes and tile assets.", folders))
+            return;
+
+        int sceneCount = DeleteAssetsByFilter("t:Scene", folders);
+        int terrainCount = DeleteAssetsByFilter("t:TerrainData", folders);
+        int otherAssetsCount = DeleteNonSceneAssets(folders);
+        DeleteEmptyFolders(folders, paths.ConfiguredRoot);
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log($"[TileSceneGenerator] Cleanup complete. scenes deleted={sceneCount}, assets deleted={terrainCount + otherAssetsCount}, folders=[{string.Join(", ", folders)}]");
+    }
+
+    private bool ConfirmCleanup(string title, string message, IEnumerable<string> folders)
+    {
+        string folderBlock = string.Join("\n", folders.Where(f => !string.IsNullOrWhiteSpace(f)).Distinct().Select(f => $"• {f}"));
+        return EditorUtility.DisplayDialog(
+            title,
+            $"{message}\n\nTarget folders:\n{folderBlock}\n\nProceed?",
+            "Delete",
+            "Cancel");
+    }
+
+    private bool ValidateCleanupSafety(GeneratedOutputPaths paths, IEnumerable<string> candidateFolders, out string reason)
+    {
+        string configuredRoot = NormalizeAssetPath(paths.ConfiguredRoot);
+        if (string.IsNullOrWhiteSpace(configuredRoot) || !configuredRoot.StartsWith("Assets", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "Cleanup aborted. Output folder must be a valid Assets/ path.";
+            return false;
+        }
+
+        foreach (string rawFolder in candidateFolders)
+        {
+            string folder = NormalizeAssetPath(rawFolder);
+            if (string.IsNullOrWhiteSpace(folder))
+                continue;
+
+            bool compatible = IsCleanupPathCompatible(configuredRoot, folder);
+            if (!compatible && !folder.Equals(configuredRoot, StringComparison.Ordinal))
+            {
+                reason =
+                    "Cleanup aborted by safety check.\n" +
+                    $"Configured output root: {configuredRoot}\n" +
+                    $"Unsafe folder: {folder}";
+                return false;
+            }
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private int DeleteAssetsByFilter(string filter, string[] searchFolders)
+    {
+        int deleted = 0;
+        foreach (var folder in searchFolders.Where(AssetDatabase.IsValidFolder).Distinct())
+        {
+            string[] guids = AssetDatabase.FindAssets(filter, new[] { folder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(path))
+                    continue;
+                if (AssetDatabase.DeleteAsset(path))
+                    deleted++;
+            }
+        }
+
+        return deleted;
+    }
+
+    private int DeleteNonSceneAssets(string[] searchFolders)
+    {
+        int deleted = 0;
+        foreach (var folder in searchFolders.Where(AssetDatabase.IsValidFolder).Distinct())
+        {
+            string[] guids = AssetDatabase.FindAssets(string.Empty, new[] { folder });
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(path) || AssetDatabase.IsValidFolder(path) || path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (AssetDatabase.DeleteAsset(path))
+                    deleted++;
+            }
+        }
+
+        return deleted;
+    }
+
+    private void DeleteEmptyFolders(IEnumerable<string> folders, string configuredRoot)
+    {
+        // Work bottom-up: deepest folders first.
+        var ordered = folders
+            .Where(AssetDatabase.IsValidFolder)
+            .Select(NormalizeAssetPath)
+            .Distinct()
+            .OrderByDescending(f => f.Count(c => c == '/'))
+            .ToArray();
+
+        foreach (string start in ordered)
+            DeleteEmptyFolderAndParents(start, configuredRoot);
+    }
+
+    private void DeleteEmptyFolderAndParents(string folder, string configuredRoot)
+    {
+        string current = NormalizeAssetPath(folder);
+
+        while (!string.IsNullOrWhiteSpace(current) &&
+               AssetDatabase.IsValidFolder(current) &&
+               !current.Equals("Assets", StringComparison.Ordinal))
+        {
+            // Only allow deleting folders that pass your safety rules
+            if (!IsCleanupPathCompatible(configuredRoot, current) && !current.Equals(NormalizeAssetPath(configuredRoot), StringComparison.Ordinal))
+                break;
+
+            if (!IsFolderTrulyEmpty(current))
+                break;
+
+            FileUtil.DeleteFileOrDirectory(current);
+            FileUtil.DeleteFileOrDirectory(current + ".meta");
+
+            string parent = NormalizeAssetPath(Path.GetDirectoryName(current));
+            if (string.IsNullOrWhiteSpace(parent) || parent.Equals(current, StringComparison.Ordinal))
+                break;
+
+            current = parent;
+        }
+    }
+
+    private static bool IsFolderTrulyEmpty(string assetFolderPath)
+    {
+        // Convert "Assets/..." to an absolute path on disk.
+        string absolute = Path.GetFullPath(assetFolderPath);
+
+        if (!Directory.Exists(absolute))
+            return true;
+
+        // Any real files (excluding .meta) means not empty.
+        foreach (var file in Directory.EnumerateFiles(absolute, "*", SearchOption.TopDirectoryOnly))
+        {
+            if (!file.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        // Any subdirectories means not empty.
+        foreach (var dir in Directory.EnumerateDirectories(absolute, "*", SearchOption.TopDirectoryOnly))
+            return false;
+
+        return true;
+    }
+    
+    private void DebugLogResolvedFolders(string label, IEnumerable<string> folders)
+    {
+        var list = folders
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Distinct()
+            .OrderBy(f => f)
+            .ToArray();
+
+        Debug.Log(
+            $"[TileSceneGenerator] {label}\n" +
+            $"Count: {list.Length}\n" +
+            string.Join("\n", list.Select(f => $"  • {f}"))
+        );
+    }
+    #endregion
 
     // MAIN ORCHESTRATOR (safe snapshots)
     private void RunForAllTerrains()
