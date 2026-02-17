@@ -33,7 +33,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     [SerializeField] private string folder = "Assets/Level/Scenes/Tiles/";
     
     // Source (multi-terrain)
-    [Header("Source Terrains")]
     [SerializeField] private bool autoCollectTerrains = true;
     [SerializeField] private string terrainNamePrefix = "Terrain_";
     [SerializeField] private Terrain[] sourceTerrains; // used when autoCollectTerrains = false
@@ -43,7 +42,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     private string _currentTerrainLabel = "";
 
     // Grid (meters)
-    [Header("Grid (auto-calculated from meters)")]
     [SerializeField] private float tileSizeMeters = 250f;
     private int tilesX;
     private int tilesY;
@@ -62,7 +60,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     private string _outputPropsFolder;
 
     // Copy Channels
-    [Header("Copy Channels")]
     [SerializeField] private bool copyHeights = true;
     [SerializeField] private bool copyAlphamaps = true;
     [SerializeField] private bool copyDetails = true;
@@ -70,7 +67,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     [SerializeField] private bool copyProps = true;
 
     // Reslice Options
-    [Header("Reslice Options")]
     [SerializeField] private bool nonDestructiveReslice = true; // update TerrainData in existing scenes, keep other objects
     [SerializeField] private bool onlyUpdateIfChanged = false; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
