@@ -1019,7 +1019,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 sb.AppendLine($"  • {labelPadded}: {contentPadded}(gizmo {row.Gizmo})");
             }
 
-            Log(sb.ToString());
+            Debug.Log(sb.ToString());
 
             _changedTerrains.Clear();
             _finalContentSummary.Clear();
@@ -1954,6 +1954,14 @@ public sealed class TileSceneGenerator : ScriptableObject
                 $"but TileIndex contains {indexedTileCount}."
             );
         }
+        
+        int inconsistentBounds = settings.tileIndex.Tiles.Count(r => !TileIndex.IsCenterConsistentWithOrigin(r));
+        if (inconsistentBounds > 0)
+        {
+            throw new InvalidOperationException(
+                $"[TileSceneGenerator] TileIndex validation failed: {inconsistentBounds} tile(s) have mismatched worldBounds.center/worldOrigin/tileSize."
+            );
+        }
 
         Debug.Log($"[TileSceneGenerator] TileIndex validation passed: {indexedTileCount}/{expectedTileCount} tiles indexed.");
     }
@@ -2614,7 +2622,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             sb.AppendLine("[TileSceneGenerator] Clean Build Settings removed missing scenes:");
             foreach (var p in removedPaths)
                 sb.AppendLine("  • " + p);
-            Log(sb.ToString());
+            Debug.Log(sb.ToString());
 
             if (showPopup)
                 EditorUtility.DisplayDialog("Clean Build Settings",
@@ -2622,7 +2630,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
         else if (showPopup)
         {
-            Log("Clean Build Settings: no missing scenes found.");
+            Debug.Log("Clean Build Settings: no missing scenes found.");
             EditorUtility.DisplayDialog("Clean Build Settings",
                 "No missing scenes found.", "OK");
         }

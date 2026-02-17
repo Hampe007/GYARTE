@@ -831,6 +831,7 @@ public class TileStreamCoordinator : NetworkBehaviour
         private readonly List<Vector3> cachedPositions = new();
         private readonly Dictionary<Vector2Int, List<TileIndex.TileRecord>> tilesByCoord = new();
         private readonly List<TileIndex.TileRecord> coordQueryScratch = new();
+        private readonly HashSet<string> candidatePathScratch = new();
         private readonly float minTileDimension;
         private readonly float maxTileHalfDiagonal;
 
@@ -897,40 +898,44 @@ public class TileStreamCoordinator : NetworkBehaviour
         private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
         {
             CollectCandidateTiles(position, radiusSquared, coordQueryScratch);
+            candidatePathScratch.Clear();
 
             for (int i = 0; i < coordQueryScratch.Count; ++i)
             {
                 var record = coordQueryScratch[i];
+                if (!candidatePathScratch.Add(record.scenePath))
+                {
+                    continue;
+                }
+
                 if (record.worldBounds.SqrDistance(position) <= radiusSquared)
                 {
                     destination.Add(record.scenePath);
                 }
+            }
+        }
 
-                private void CollectCandidateTiles(Vector3 position, float radiusSquared, List<TileIndex.TileRecord> destination)
+        private void CollectCandidateTiles(Vector3 position, float radiusSquared, List<TileIndex.TileRecord> destination)
+        {
+            destination.Clear();
+            if (tilesByCoord.Count == 0)
+            {
+                return;
+            }
+
+            float radius = Mathf.Sqrt(Mathf.Max(0f, radiusSquared));
+            float paddedRadius = radius + maxTileHalfDiagonal;
+            int coordRadius = Mathf.Max(0, Mathf.CeilToInt(paddedRadius / minTileDimension));
+
+            Vector2Int centerCoord = index.WorldToTile(position);
+            for (int dx = -coordRadius; dx <= coordRadius; ++dx)
+            {
+                for (int dy = -coordRadius; dy <= coordRadius; ++dy)
                 {
-                    destination.Clear();
-                    if (tilesByCoord.Count == 0)
+                    var coord = new Vector2Int(centerCoord.x + dx, centerCoord.y + dy);
+                    if (tilesByCoord.TryGetValue(coord, out List<TileIndex.TileRecord> bucket))
                     {
-                        return;
-                    }
-
-                    float radius = Mathf.Sqrt(Mathf.Max(0f, radiusSquared));
-                    float paddedRadius = radius + maxTileHalfDiagonal;
-                    int coordRadius = Mathf.Max(0, Mathf.CeilToInt(paddedRadius / minTileDimension));
-
-                    Vector2Int centerCoord = index.WorldToTile(position);
-                    for (int dx = -coordRadius; dx <= coordRadius; ++dx)
-                    {
-                        for (int dy = -coordRadius; dy <= coordRadius; ++dy)
-                        {
-                            var coord = new Vector2Int(centerCoord.x + dx, centerCoord.y + dy);
-                            if (!tilesByCoord.TryGetValue(coord, out var bucket))
-                            {
-                                continue;
-                            }
-
-                            destination.AddRange(bucket);
-                        }
+                        destination.AddRange(bucket);
                     }
                 }
             }

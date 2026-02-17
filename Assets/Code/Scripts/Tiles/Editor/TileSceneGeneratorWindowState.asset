@@ -25,7 +25,7 @@ MonoBehaviour:
   evenFitNoRemainder: 1
   forceSquareTiles: 1
   sceneNamePattern: '{t}_Tile_{x}_{y}'
-  outputFolder: Assets/Tiles/Terrain_East
+  outputFolder: Assets/Tiles
   terrainDataPrefix: TD_
   subfolderPerTerrain: 1
   copyHeights: 1
@@ -36,3 +36,4 @@ MonoBehaviour:
   nonDestructiveReslice: 0
   onlyUpdateIfChanged: 0
   addToBuildSettings: 1
+  clearConsoleBeforeActions: 1

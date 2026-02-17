@@ -5,7 +5,6 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Tiles/Tile Index", fileName = "TileIndex")]
 public class TileIndex : ScriptableObject
 {
-    
     public const float BoundsOriginToleranceMeters = 0.01f;
     
     [Serializable] 
@@ -162,6 +161,16 @@ public class TileIndex : ScriptableObject
         }
     }
 
+    public static bool IsCenterConsistentWithOrigin(in TileRecord record, float tolerance = BoundsOriginToleranceMeters)
+    {
+        var expectedCenterX = record.worldOrigin.x + record.tileSize.x * 0.5f;
+        var expectedCenterZ = record.worldOrigin.z + record.tileSize.z * 0.5f;
+        var maxTolerance = Mathf.Max(0f, tolerance);
+
+        return Mathf.Abs(record.worldBounds.center.x - expectedCenterX) <= maxTolerance
+               && Mathf.Abs(record.worldBounds.center.z - expectedCenterZ) <= maxTolerance;
+    }
+    
 #if UNITY_EDITOR
     public void SetOriginOffset(Vector2 newOriginOffset)
     {
@@ -182,12 +191,6 @@ public class TileIndex : ScriptableObject
     public void SetNamespaceDuplicateCoordsByTerrainLabel(bool enabled)
     {
         namespaceDuplicateCoordsByTerrainLabel = enabled;
-    }
-    
-    public static bool IsCenterConsistentWithOrigin(in TileRecord record, float tolerance = BoundsOriginToleranceMeters)
-    {
-        var expectedCenter = record.worldOrigin + new Vector3(record.tileSize.x * 0.5f, record.tileSize.y * 0.5f, record.tileSize.z * 0.5f);
-        return Vector3.Distance(record.worldBounds.center, expectedCenter) <= Mathf.Max(0f, tolerance);
     }
 #endif
 }
