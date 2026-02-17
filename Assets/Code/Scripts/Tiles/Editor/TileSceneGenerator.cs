@@ -15,19 +15,19 @@ using System.Text;
 public sealed class TileSceneGenerator : ScriptableObject
 {
     // UI / runtime guard
-    private bool _isRunning = false;
+    private bool _isRunning;
     private Stopwatch _globalTimer;
     
-    private readonly List<string> _changedTerrains = new List<string>();
-    private readonly StringBuilder _terrainLog = new StringBuilder(256);
+    private readonly List<string> _changedTerrains = new();
+    private readonly StringBuilder _terrainLog = new(256);
     
     // Per-terrain change trackers (reset per terrain)
     private bool _changedHeights, _changedAlpha, _changedDetails, _changedTrees;
     private int  _treesAdded, _treesRemoved, _treesModifiedTiles;
     
     // Per-run final summary (reset once per run)
-    private readonly Dictionary<string, string> _finalContentSummary = new Dictionary<string, string>(32);
-    private readonly Dictionary<string, string> _gizmoStatus = new Dictionary<string, string>(32);
+    private readonly Dictionary<string, string> _finalContentSummary = new(32);
+    private readonly Dictionary<string, string> _gizmoStatus = new(32);
 
     [SerializeField] private TileSliceSettings settings;
     [SerializeField] private string folder = "Assets/Level/Scenes/Tiles/";
@@ -45,14 +45,13 @@ public sealed class TileSceneGenerator : ScriptableObject
     // Grid (meters)
     [Header("Grid (auto-calculated from meters)")]
     [SerializeField] private float tileSizeMeters = 250f;
-    [HideInInspector] private int tilesX;
-    [HideInInspector] private int tilesY;
+    private int tilesX;
+    private int tilesY;
     
     [SerializeField] private bool evenFitNoRemainder = true; // adjust size so terrain divides evenly
     [SerializeField] private bool forceSquareTiles   = true; // when even-fit, make tiles perfect squares
 
     // Output
-    [Header("Output")]
     [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
     [SerializeField] private string outputFolder = "Assets/Scenes/Tiles";
     [SerializeField] private string terrainDataPrefix = "TD_"; // saved as TD_<t>_<x>_<y>.asset

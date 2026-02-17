@@ -9,8 +9,8 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
     private Vector2 _scrollPos;
     private GUIStyle _monoStyle;
 
-    [MenuItem("Tools//Tiles/Tile Scene Generator & Reslicer")]
-    private static void Open() => GetWindow<TileSceneGeneratorWindow>("Tile Scene Generator");
+    [MenuItem("Tools/Tiles/Tile Scene Generator & Re-slicer")]
+    private static void Open() => GetWindow<TileSceneGeneratorWindow>();
 
     private void OnEnable()
     {
