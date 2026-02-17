@@ -135,6 +135,11 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
         string preview = generator.BuildPreviewText();
         if (!string.IsNullOrEmpty(preview))
         {
+            if (preview.StartsWith("[Preview error]", System.StringComparison.Ordinal))
+            {
+                EditorGUILayout.HelpBox(preview, MessageType.Warning);
+            }
+            
             EditorGUILayout.BeginVertical("box");
             foreach (string line in preview.Split('\n'))
             {

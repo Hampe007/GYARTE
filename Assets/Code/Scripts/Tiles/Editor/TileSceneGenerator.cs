@@ -174,31 +174,38 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     public string BuildPreviewText()
     {
-        var snaps = CollectSnapshots(onlySnapshotList: true);
-        if (snaps == null || snaps.Count == 0)
-            return string.Empty;
-
-        int grandTotal = 0;
-        var sb = new StringBuilder(512);
-        sb.AppendLine("Preview:");
-
-        foreach (var s in snaps)
+        try
         {
-            ComputePreviewGridFor(s.data, out int nx, out int ny, out float fx, out float fy);
-            grandTotal += nx * ny;
+            var snaps = CollectSnapshots(onlySnapshotList: true);
+            if (snaps == null || snaps.Count == 0)
+                return string.Empty;
 
-            var sz = s.data.size;
-            string label = s.label.PadRight(20);
-            string sizeStr = $"{sz.x,6:0.#}×{sz.z,-6:0.#}";
-            string tilesStr = $"{nx,3}×{ny,-3}";
-            string tileSizeStr = $"{fx,5:0.#}×{fy,-5:0.#}";
-            sb.AppendLine($"{label} | {sizeStr} m | {tilesStr} tiles @ {tileSizeStr} m");
+            int grandTotal = 0;
+            var sb = new StringBuilder(512);
+            sb.AppendLine("Preview:");
+
+            foreach (var s in snaps)
+            {
+                ComputePreviewGridFor(s.data, out int nx, out int ny, out float fx, out float fy);
+                grandTotal += nx * ny;
+
+                var sz = s.data.size;
+                string label = s.label.PadRight(20);
+                string sizeStr = $"{sz.x,6:0.#}×{sz.z,-6:0.#}";
+                string tilesStr = $"{nx,3}×{ny,-3}";
+                string tileSizeStr = $"{fx,5:0.#}×{fy,-5:0.#}";
+                sb.AppendLine($"{label} | {sizeStr} m | {tilesStr} tiles @ {tileSizeStr} m");
+            }
+
+            sb.AppendLine(new string('-', 70));
+            sb.AppendLine($"Total tiles: {grandTotal}");
+            sb.AppendLine($"Options: evenFit={evenFitNoRemainder}, squares={forceSquareTiles}, desired≈{tileSizeMeters:0.##} m");
+            return sb.ToString();
         }
-
-        sb.AppendLine(new string('-', 70));
-        sb.AppendLine($"Total tiles: {grandTotal}");
-        sb.AppendLine($"Options: evenFit={evenFitNoRemainder}, squares={forceSquareTiles}, desired≈{tileSizeMeters:0.##} m");
-        return sb.ToString();
+        catch (Exception ex)
+        {
+            return $"[Preview error] {ex.Message}";
+        }
     }
 
     public void RunSliceWithDialogs()
@@ -1562,6 +1569,18 @@ public sealed class TileSceneGenerator : ScriptableObject
             throw new InvalidOperationException("Scene Name Pattern must include {x} and {y}. You can also use {t} for terrain name.");
         if (string.IsNullOrWhiteSpace(effectiveOutputFolder) || !effectiveOutputFolder.StartsWith("Assets", StringComparison.Ordinal))
             throw new InvalidOperationException("Output folder must be under Assets/.");
+        if (!IsSafeAssetFolderPath(effectiveOutputFolder))
+            throw new InvalidOperationException($"Output folder path is invalid: '{effectiveOutputFolder}'. Use a valid Assets/... path without invalid characters.");
+
+        string sampleTileSceneName = ReplaceTokens(sceneNamePattern, 0, 0);
+        if (string.IsNullOrWhiteSpace(sampleTileSceneName)
+            || sampleTileSceneName.Contains('/')
+            || sampleTileSceneName.Contains('\\')
+            || sampleTileSceneName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            throw new InvalidOperationException(
+                $"Scene Name Pattern resolves to an invalid scene file name ('{sampleTileSceneName}'). Remove path separators and invalid filename characters.");
+        }
 
         // Create root + two subfolders
         EnsureFolder(effectiveOutputFolder);
@@ -1595,6 +1614,23 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
             EnsureFolder(parent);
         AssetDatabase.CreateFolder(parent, leaf);
+    }
+    
+    private static bool IsSafeAssetFolderPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        string normalized = NormalizeAssetPath(path);
+        if (!normalized.StartsWith("Assets", StringComparison.Ordinal))
+            return false;
+
+        if (normalized.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+            return false;
+
+        return normalized
+            .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+            .All(segment => segment.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
     }
 
     private string GetPropAssetPath(int tx, int ty)
