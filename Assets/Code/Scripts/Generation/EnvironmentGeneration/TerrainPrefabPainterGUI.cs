@@ -484,11 +484,9 @@ public partial class TerrainPrefabPainter
                     rule.name
                 );
 
-                rule.prefab = (GameObject)EditorGUILayout.ObjectField(
-                    new GUIContent("Prefab", "Prefab to spawn."),
-                    rule.prefab,
-                    typeof(GameObject),
-                    false
+                rule.prefab = PrefabAssetField(
+                    new GUIContent("Prefab", "Must be a Prefab/Variant asset (NOT an FBX Model, NOT a scene object)."),
+                    rule.prefab
                 );
 
                 EditorGUILayout.Space(6);
@@ -1018,11 +1016,10 @@ public partial class TerrainPrefabPainter
 
             EditorGUILayout.BeginHorizontal("box");
 
-            variant.prefab = (GameObject)EditorGUILayout.ObjectField(
+            variant.prefab = PrefabAssetField(
+                new GUIContent("Variant Prefab", "Must be a Prefab/Variant asset (NOT an FBX Model, NOT a scene object)."),
                 variant.prefab,
-                typeof(GameObject),
-                false,
-                GUILayout.Width(200)
+                200f
             );
 
             variant.weight = EditorGUILayout.Slider(
@@ -1258,6 +1255,54 @@ public partial class TerrainPrefabPainter
         GUILayout.EndArea();
     }
 
+    bool IsAllowedPrefabAsset(GameObject go, out string reason)
+    {
+        reason = null;
+
+        if (go == null)
+            return true;
+
+        var type = PrefabUtility.GetPrefabAssetType(go);
+
+        if (type == PrefabAssetType.Model)
+        {
+            reason = "Model (FBX) assets are not allowed. Create a prefab (or prefab variant) and assign that.";
+            return false;
+        }
+
+        if (type == PrefabAssetType.NotAPrefab)
+        {
+            reason = "Scene objects are not allowed. Assign a prefab asset from the Project window.";
+            return false;
+        }
+
+        return type == PrefabAssetType.Regular || type == PrefabAssetType.Variant;
+    }
+
+    GameObject PrefabAssetField(GUIContent label, GameObject current, float width = 0f)
+    {
+        GameObject picked;
+
+        if (width > 0f)
+            picked = (GameObject)EditorGUILayout.ObjectField(label, current, typeof(GameObject), false, GUILayout.Width(width));
+        else
+            picked = (GameObject)EditorGUILayout.ObjectField(label, current, typeof(GameObject), false);
+
+        if (picked != current)
+        {
+            if (!IsAllowedPrefabAsset(picked, out var reason))
+            {
+                Debug.LogError($"[PrefabPainter] {label.text}: {reason}");
+                return current; // reject invalid pick
+            }
+        }
+
+        // Warn if existing value is invalid (already serialized)
+        if (current != null && !IsAllowedPrefabAsset(current, out var currentReason))
+            EditorGUILayout.HelpBox($"{label.text}: {currentReason}", MessageType.Warning);
+
+        return picked;
+    }
     #endregion
 }
 #endif

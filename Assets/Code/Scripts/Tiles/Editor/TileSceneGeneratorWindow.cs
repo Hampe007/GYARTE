@@ -17,12 +17,6 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
         EnsureGenerator();
     }
 
-    private void OnDisable()
-    {
-        if (generator != null)
-            DestroyImmediate(generator);
-    }
-
     private void OnGUI()
     {
         EnsureGenerator();
@@ -45,18 +39,14 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
 
     private void DrawHeaderSection()
     {
-        EditorGUILayout.LabelField(new GUIContent("Tile Scene Generator", "Generate terrain tile scenes and reslice safely while keeping data consistent."), EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox("Slice terrains → tile scenes, and safely re-slice later.", MessageType.Info);
-
         if (generator.IsRunning)
             EditorGUILayout.HelpBox("Slicing in progress… controls are disabled to avoid touching live scene objects.", MessageType.Info);
     }
 
     private void DrawOutputFolderSection()
     {
-        EditorGUILayout.Space(8);
-        EditorGUILayout.LabelField(new GUIContent("Output Folder Settings", "Configure where generated scenes and terrain assets are written."), EditorStyles.boldLabel);
-
+        DrawSectionHeader("Output Folder Settings","Controls where generated tile scenes, TerrainData assets, and derived content are written under the Assets folder.");
+        
         EditorGUILayout.PropertyField(Find("sceneNamePattern"), new GUIContent("Scene Name Pattern", "Naming pattern for generated scenes. Tokens: {t} terrain name, {x} column, {y} row."));
         EditorGUILayout.PropertyField(Find("outputFolder"), new GUIContent("Output Root Folder", "Root folder under Assets where generated tile output will be saved."));
         EditorGUILayout.PropertyField(Find("terrainDataPrefix"), new GUIContent("TerrainData Prefix", "Prefix used when generating TerrainData assets per tile."));
@@ -65,8 +55,7 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
 
     private void DrawSlicingSection()
     {
-        EditorGUILayout.Space(8);
-        EditorGUILayout.LabelField(new GUIContent("Slicing", "Select terrains, configure tile sizing, and run slice/reslice."), EditorStyles.boldLabel);
+        DrawSectionHeader("Slicing","Select source terrains, configure tile sizing rules, and execute slice or re-slice operations.");
 
         EditorGUILayout.PropertyField(Find("autoCollectTerrains"), new GUIContent("Auto-collect Terrains", "Use Terrain.activeTerrains and filter by name prefix."));
 
@@ -103,7 +92,8 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
             EditorGUILayout.PropertyField(Find("forceSquareTiles"), new GUIContent("Force Square Tiles", "When even-fit is on, force equal X and Z tile size."));
         }
 
-        EditorGUILayout.Space(4);
+        DrawSectionHeader("Data Channels","Controls which terrain data layers are copied into generated tiles.");
+        
         EditorGUILayout.PropertyField(Find("copyHeights"), new GUIContent("Copy Heights", "Copy terrain heights into generated tiles."));
         EditorGUILayout.PropertyField(Find("copyAlphamaps"), new GUIContent("Copy Splatmaps", "Copy terrain texture splatmaps into generated tiles."));
         EditorGUILayout.PropertyField(Find("copyDetails"), new GUIContent("Copy Details", "Copy detail layers such as grass into generated tiles."));
@@ -131,6 +121,8 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
             }
         }
 
+        DrawSectionHeader("Execution Preview","Preview the slice result and execute the operation.");
+        
         string preview = generator.BuildPreviewText();
         if (!string.IsNullOrEmpty(preview))
         {
@@ -156,9 +148,8 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
 
     private void DrawCleanupSection()
     {
-        EditorGUILayout.Space(8);
-        EditorGUILayout.LabelField(new GUIContent("Cleanup", "Reveal or remove generated output artifacts."), EditorStyles.boldLabel);
-
+        DrawSectionHeader("Cleanup","Inspect or remove previously generated tile scenes and derived assets.");
+        
         using (new EditorGUI.DisabledScope(generator.IsRunning))
         {
             if (GUILayout.Button(new GUIContent("Reveal Output Folder", "Open the generated output folder in the system file browser.")))
@@ -177,15 +168,31 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
 
     private void DrawAdvancedOptionsSection()
     {
-        EditorGUILayout.Space(8);
-        EditorGUILayout.LabelField(new GUIContent("Advanced Options", "Control reslice behavior and build settings maintenance."), EditorStyles.boldLabel);
-
+        DrawSectionHeader("Advanced Options","Control reslice behavior, build settings integration, and optimization rules.");
+        
         EditorGUILayout.PropertyField(Find("nonDestructiveReslice"), new GUIContent("Non-Destructive Re-slice", "Update tile terrain data in place while preserving other scene content."));
         EditorGUILayout.PropertyField(Find("onlyUpdateIfChanged"), new GUIContent("Only Update If Changed (heights)", "Skip tiles whose heightmap is unchanged for faster reslices."));
         EditorGUILayout.PropertyField(Find("addToBuildSettings"), new GUIContent("Ensure In Build Settings", "Add generated tile scenes to Build Settings automatically."));
 
         if (GUILayout.Button(new GUIContent("Clean Build Settings", "Remove missing scene entries from Build Settings.")))
             generator.CleanBuildSettingsWithDialog();
+    }
+    
+    private void DrawSectionHeader(string title, string tooltip = null)
+    {
+        EditorGUILayout.Space(12);
+
+        Rect rect = EditorGUILayout.GetControlRect(false, 22f);
+        EditorGUI.DrawRect(
+            new Rect(rect.x, rect.y + 18f, rect.width, 1f),
+            new Color(0.25f, 0.25f, 0.25f)
+        );
+
+        EditorGUI.LabelField(
+            rect,
+            new GUIContent(title, tooltip),
+            EditorStyles.boldLabel
+        );
     }
 
     private SerializedProperty Find(string propertyName) => _serializedGenerator.FindProperty(propertyName);
@@ -211,16 +218,38 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
         }
     }
 
+    private const string GeneratorAssetPath = "Assets/Code/Scripts/Tiles/Editor/TileSceneGeneratorWindowState.asset";
+
     private void EnsureGenerator()
     {
         if (generator == null)
         {
-            generator = CreateInstance<TileSceneGenerator>();
-            generator.hideFlags = HideFlags.HideAndDontSave;
+            generator = AssetDatabase.LoadAssetAtPath<TileSceneGenerator>(GeneratorAssetPath);
+
+            if (generator == null)
+            {
+                EnsureFolderExists("Assets/Editor");
+                generator = CreateInstance<TileSceneGenerator>();
+                AssetDatabase.CreateAsset(generator, GeneratorAssetPath);
+                AssetDatabase.SaveAssets();
+            }
         }
 
         if (_serializedGenerator == null || _serializedGenerator.targetObject != generator)
             _serializedGenerator = new SerializedObject(generator);
+    }
+
+    private static void EnsureFolderExists(string path)
+    {
+        if (AssetDatabase.IsValidFolder(path)) return;
+
+        string parent = System.IO.Path.GetDirectoryName(path)?.Replace("\\", "/");
+        string leaf = System.IO.Path.GetFileName(path);
+
+        if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
+            EnsureFolderExists(parent);
+
+        AssetDatabase.CreateFolder(parent, leaf);
     }
 }
 #endif

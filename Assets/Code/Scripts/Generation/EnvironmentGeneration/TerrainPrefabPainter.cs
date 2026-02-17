@@ -104,8 +104,6 @@ public partial class TerrainPrefabPainter : EditorWindow
 
     #endregion
 
-
-
     #region Menu
 
     [MenuItem("Tools/Terrain Prefab Painter")]
@@ -713,6 +711,20 @@ public partial class TerrainPrefabPainter : EditorWindow
                         }
                     }
                 }
+                
+                if (chosenPrefab != null)
+                {
+                    var type = PrefabUtility.GetPrefabAssetType(chosenPrefab);
+
+                    if (type == PrefabAssetType.Model)
+                    {
+                        Debug.LogError(
+                            $"[PrefabPainter] Rule '{rule.name}' is using a Model asset '{chosenPrefab.name}'. " +
+                            "Create a prefab from the FBX and use that instead."
+                        );
+                        continue;
+                    }
+                }
 
                 if (chosenPrefab == null) continue;
 
@@ -1190,6 +1202,8 @@ public partial class TerrainPrefabPainter : EditorWindow
             }
         }
     }
+    
+    
    
 #if UNITY_EDITOR
     void CreateCircleForRule(PrefabPaintRule rule)
@@ -1219,7 +1233,6 @@ public partial class TerrainPrefabPainter : EditorWindow
         Debug.Log($"[Painter] Created circle for rule '{rule.name}'");
     }
 #endif
-
     #endregion
     
 

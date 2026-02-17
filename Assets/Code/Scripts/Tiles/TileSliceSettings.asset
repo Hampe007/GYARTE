@@ -17,38 +17,38 @@ MonoBehaviour:
   - label: Terrain_Master
     origin: {x: 0, y: -2, z: 0}
     size: {x: 5000, y: 1000, z: 5000}
-    tilesX: 20
-    tilesY: 20
-    tileSizeX: 250
-    tileSizeY: 250
+    tilesX: 16
+    tilesY: 16
+    tileSizeX: 312.5
+    tileSizeY: 312.5
   - label: Terrain_North
     origin: {x: 0, y: -2, z: 5000}
     size: {x: 5000, y: 1000, z: 256}
-    tilesX: 20
+    tilesX: 16
     tilesY: 1
-    tileSizeX: 250
+    tileSizeX: 312.5
     tileSizeY: 256
   - label: Terrain_East
     origin: {x: 5000, y: -2, z: 0}
     size: {x: 256, y: 1000, z: 5000}
     tilesX: 1
-    tilesY: 20
+    tilesY: 16
     tileSizeX: 256
-    tileSizeY: 250
+    tileSizeY: 312.5
   - label: Terrain_South
     origin: {x: 0, y: -2, z: -255.99997}
     size: {x: 5000, y: 1000, z: 256}
-    tilesX: 20
+    tilesX: 16
     tilesY: 1
-    tileSizeX: 250
+    tileSizeX: 312.5
     tileSizeY: 256
   - label: Terrain_West
     origin: {x: -256, y: -2, z: 0}
     size: {x: 256, y: 1000, z: 5000}
     tilesX: 1
-    tilesY: 20
+    tilesY: 16
     tileSizeX: 256
-    tileSizeY: 250
+    tileSizeY: 312.5
   - label: Terrain_NorthEast
     origin: {x: 5000, y: -2, z: 5000}
     size: {x: 256, y: 1000, z: 256}

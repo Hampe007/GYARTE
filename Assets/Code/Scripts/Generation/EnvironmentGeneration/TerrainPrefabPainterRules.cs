@@ -25,12 +25,12 @@ public partial class TerrainPrefabPainter
 
         public Vector2 randomScale = new Vector2(0.9f, 1.2f);
         public Vector3 axisVariance = Vector3.zero;    
-        public float shapeNoiseScale = 0f;            
-        public float shapeNoiseStrength = 0f;         
+        public float shapeNoiseScale;            
+        public float shapeNoiseStrength;         
     
         public float clearRadius = 1.5f;
     
-        public bool deleteBeforeSpawn = false;
+        public bool deleteBeforeSpawn;
 
         public bool useCircleArea;
         public bool circleExcludes = true;

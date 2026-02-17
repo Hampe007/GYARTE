@@ -395,7 +395,7 @@ public class CustomNetworkManager : NetworkManager
     }
 
     private static bool IsGameScene(string sceneName)
-        => sceneName == "Temp Terrain" || sceneName == "GameExp1" || sceneName == "Terrain" || sceneName == "Game Exp" || sceneName == "Game";
+        => sceneName == "GameExp1" || sceneName == "Terrain" || sceneName == "Game Exp" || sceneName == "Game";
 
     private static bool IsLobbyScene(string sceneName)
         => sceneName == "Lobby";

@@ -16,7 +16,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     [SerializeField] public float loadRadius = 500f;
     [SerializeField] private float edgeBuffer = 25f;
     public float scanInterval = 0.5f;
-    public bool logActions = false;
+    public bool logActions;
 
     private readonly HashSet<string> serverLoaded = new();
     private readonly HashSet<string> clientLoaded = new();
@@ -42,8 +42,8 @@ public class TileStreamCoordinator : NetworkBehaviour
     private TileLoader loader;
 
     [Header("Build Overrides")]
-    [SerializeField] private bool disableInPlayerBuilds = false;
-    [SerializeField] private bool disableAtRuntime = false;
+    [SerializeField] private bool disableInPlayerBuilds;
+    [SerializeField] private bool disableAtRuntime;
 
     [Header("Master Terrain")]
     [SerializeField] private Terrain masterTerrain;
@@ -51,10 +51,10 @@ public class TileStreamCoordinator : NetworkBehaviour
     [SerializeField] private bool unloadMasterTerrainScene = true;
 
     private string masterTerrainScenePath = string.Empty;
-    private bool masterSceneUnloaded = false;
+    private bool masterSceneUnloaded;
 
-    private bool masterDisabled = false;
-    private bool masterWorkRunning = false;
+    private bool masterDisabled;
+    private bool masterWorkRunning;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -66,6 +66,10 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private int serverLoadFrame = -1;
     private int clientLoadFrame = -1;
+    
+    private Coroutine masterEnsureCoroutine;
+    
+    private Coroutine resolvePlayerLoop;
 
     public override void OnStartServer()
     {
@@ -108,7 +112,7 @@ public class TileStreamCoordinator : NetworkBehaviour
         streamer = new TileStreamer(index);
         loader = new TileLoader(this, liveTiles);
 
-        InitializeReferences();
+        TryResolvePlayerAndOfflineTarget();
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
         masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
@@ -294,23 +298,46 @@ public class TileStreamCoordinator : NetworkBehaviour
     
     private void OnEnable()
     {
-        InitializeReferences();
-        
-        // Offline mode: run when Mirror is not active
+        if (StreamingLocked)
+        {
+            enabled = false;
+            return;
+        }
+
+        TryResolvePlayerAndOfflineTarget();
+
+        if (resolvePlayerLoop == null)
+        {
+            resolvePlayerLoop = StartCoroutine(ResolvePlayerLoop());
+        }
+
         if (offlineStandalone && !NetworkServer.active && !NetworkClient.active && index != null)
         {
             if (offlineLoop == null) offlineLoop = StartCoroutine(OfflineLoop());
         }
     }
 
+
     private void OnDisable()
     {
+        if (resolvePlayerLoop != null)
+        {
+            StopCoroutine(resolvePlayerLoop);
+            resolvePlayerLoop = null;
+        }
+
         if (offlineLoop != null)
         {
             StopCoroutine(offlineLoop);
             offlineLoop = null;
         }
 
+        if (clientApplyCoroutine != null)
+        {
+            StopCoroutine(clientApplyCoroutine);
+            clientApplyCoroutine = null;
+        }
+        
         if (clientLoaded.Count > 0)
         {
             StartCoroutine(UnloadAllTiles(clientLoaded, isServer: false));
@@ -366,13 +393,18 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     }
 
-    private void InitializeReferences()
+    private bool TryResolvePlayerAndOfflineTarget()
     {
+        Transform prevPlayer = player;
+        Transform prevOffline = offlineTarget;
+
+        // Client: prefer local player
         if (player == null && NetworkClient.active && NetworkClient.localPlayer != null)
         {
             player = NetworkClient.localPlayer.transform;
         }
 
+        // Server: pick first available identity if no explicit player set
         if (player == null && NetworkServer.active)
         {
             foreach (var conn in NetworkServer.connections.Values)
@@ -385,12 +417,22 @@ public class TileStreamCoordinator : NetworkBehaviour
             }
         }
 
-        if (offlineTarget == null && player != null)
+        // Offline: fallback to main camera if still null
+        if (offlineTarget == null)
+        {
+            if (player != null) offlineTarget = player;
+            else if (Camera.main != null) offlineTarget = Camera.main.transform;
+        }
+
+        // Keep offlineTarget in sync once player exists (optional but recommended)
+        if (player != null && offlineTarget == null)
         {
             offlineTarget = player;
         }
 
         CacheMasterTerrainScene();
+
+        return prevPlayer != player || prevOffline != offlineTarget;
     }
     
     private void CacheMasterTerrainScene()
@@ -409,6 +451,27 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private IEnumerator EnsureMasterTerrainDisabled()
     {
+        // If someone else is already doing the work, wait for them.
+        if (masterWorkRunning)
+        {
+            while (masterWorkRunning)
+            {
+                yield return null;
+            }
+            yield break;
+        }
+
+        // If already done, skip.
+        bool masterAlreadyDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
+        bool masterAlreadyUnloaded = masterSceneUnloaded || string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
+
+        if (masterAlreadyDisabled && (!unloadMasterTerrainScene || masterAlreadyUnloaded))
+        {
+            masterDisabled = true;
+            masterSceneUnloaded = unloadMasterTerrainScene ? true : masterSceneUnloaded;
+            yield break;
+        }
+
         masterWorkRunning = true;
 
         if (masterTerrain != null && disableMasterOnStart && masterTerrain.gameObject.activeSelf)
@@ -420,26 +483,23 @@ public class TileStreamCoordinator : NetworkBehaviour
         if (unloadMasterTerrainScene && !masterSceneUnloaded && !string.IsNullOrEmpty(masterTerrainScenePath))
         {
             var scene = SceneManager.GetSceneByPath(masterTerrainScenePath);
-            // Avoid unloading the active scene; assume master terrain lives in a dedicated additive scene
+
             if (!scene.IsValid() || !scene.isLoaded)
             {
                 masterSceneUnloaded = true;
             }
             else
             {
-                Scene previousActive = SceneManager.GetActiveScene();
-                bool switchedActive = false;
-
-                if (scene == previousActive)
+                // If master is active, switch to a safe scene first
+                if (scene == SceneManager.GetActiveScene())
                 {
                     Scene tempActive = GetOrCreateTemporaryActiveScene();
-                    if (tempActive.IsValid())
+                    if (tempActive.IsValid() && tempActive.isLoaded)
                     {
                         SceneManager.SetActiveScene(tempActive);
-                        switchedActive = true;
                     }
                 }
-                
+
                 var op = SceneManager.UnloadSceneAsync(scene);
                 if (op != null)
                 {
@@ -447,13 +507,9 @@ public class TileStreamCoordinator : NetworkBehaviour
                     {
                         yield return null;
                     }
+                }
 
-                    masterSceneUnloaded = true;
-                }
-                if (switchedActive && previousActive.IsValid() && previousActive.isLoaded)
-                {
-                    SceneManager.SetActiveScene(previousActive);
-                }
+                masterSceneUnloaded = true;
             }
         }
 
@@ -792,4 +848,21 @@ public class TileStreamCoordinator : NetworkBehaviour
             }
         }
     }
+    
+    private IEnumerator ResolvePlayerLoop()
+    {
+        var wait = new WaitForSeconds(0.25f);
+
+        while (isActiveAndEnabled)
+        {
+            bool changed = TryResolvePlayerAndOfflineTarget();
+            if (changed && logActions)
+            {
+                Debug.Log($"[TileStream] Resolved target: {(player != null ? player.name : "null")} / offlineTarget: {(offlineTarget != null ? offlineTarget.name : "null")}");
+            }
+
+            yield return wait;
+        }
+    }
+
 }
