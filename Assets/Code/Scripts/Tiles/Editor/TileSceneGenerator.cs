@@ -12,7 +12,7 @@ using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 using System.Text;
 
-public sealed class TileSceneGenerator : EditorWindow
+public sealed class TileSceneGenerator : ScriptableObject
 {
     // UI / runtime guard
     private bool _isRunning = false;
@@ -33,7 +33,6 @@ public sealed class TileSceneGenerator : EditorWindow
     [SerializeField] private string folder = "Assets/Level/Scenes/Tiles/";
     
     // Source (multi-terrain)
-    [Header("Source Terrains")]
     [SerializeField] private bool autoCollectTerrains = true;
     [SerializeField] private string terrainNamePrefix = "Terrain_";
     [SerializeField] private Terrain[] sourceTerrains; // used when autoCollectTerrains = false
@@ -43,16 +42,14 @@ public sealed class TileSceneGenerator : EditorWindow
     private string _currentTerrainLabel = "";
 
     // Grid (meters)
-    [Header("Grid (auto-calculated from meters)")]
     [SerializeField] private float tileSizeMeters = 250f;
-    [HideInInspector] private int tilesX;
-    [HideInInspector] private int tilesY;
+    private int tilesX;
+    private int tilesY;
     
     [SerializeField] private bool evenFitNoRemainder = true; // adjust size so terrain divides evenly
     [SerializeField] private bool forceSquareTiles   = true; // when even-fit, make tiles perfect squares
 
     // Output
-    [Header("Output")]
     [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
     [SerializeField] private string outputFolder = "Assets/Scenes/Tiles";
     [SerializeField] private string terrainDataPrefix = "TD_"; // saved as TD_<t>_<x>_<y>.asset
@@ -63,7 +60,6 @@ public sealed class TileSceneGenerator : EditorWindow
     private string _outputPropsFolder;
 
     // Copy Channels
-    [Header("Copy Channels")]
     [SerializeField] private bool copyHeights = true;
     [SerializeField] private bool copyAlphamaps = true;
     [SerializeField] private bool copyDetails = true;
@@ -71,12 +67,11 @@ public sealed class TileSceneGenerator : EditorWindow
     [SerializeField] private bool copyProps = true;
 
     // Reslice Options
-    [Header("Reslice Options")]
     [SerializeField] private bool nonDestructiveReslice = true; // update TerrainData in existing scenes, keep other objects
     [SerializeField] private bool onlyUpdateIfChanged = false; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
 
-    private Vector2 _scrollPos;
+    
     
     // Snapshot type (do NOT hold Terrain refs while running)
     private sealed class TerrainSnapshot
@@ -86,344 +81,76 @@ public sealed class TileSceneGenerator : EditorWindow
         public Vector3 origin; // cached world position
     }
 
-    [MenuItem("Tools/Tiles/Tile Scene Generator & Reslicer")]
-    private static void Open() => GetWindow<TileSceneGenerator>("Tile Scene Generator");
+    public bool IsRunning => _isRunning;
 
-    private void OnGUI()
-    {
-        _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
-        
-        EnsureSettingsAsset();
-        EditorGUILayout.LabelField("Slice terrains → tile scenes, and safely re-slice later.", EditorStyles.boldLabel);
-        EditorGUILayout.Space(6);
-
-        if (_isRunning)
-        {
-            EditorGUILayout.HelpBox("Slicing in progress… preview and controls are disabled to avoid touching live scene objects.", MessageType.Info);
-            GUI.enabled = false;
-        }
-
-        // Source selector
-        autoCollectTerrains = EditorGUILayout.ToggleLeft("Auto-collect terrains (by prefix)", autoCollectTerrains);
-        using (new EditorGUI.IndentLevelScope())
-        {
-            terrainNamePrefix = EditorGUILayout.TextField("Name prefix", terrainNamePrefix);
-        }
-
-        if (!autoCollectTerrains)
-        {
-            SerializedObject so = new SerializedObject(this);
-            SerializedProperty arr = so.FindProperty("sourceTerrains");
-            EditorGUILayout.PropertyField(arr, new GUIContent("Source Terrains (manual)"), true);
-            so.ApplyModifiedProperties();
-        }
-        else
-        {
-            if (GUILayout.Button("Auto-fill now (Terrain.activeTerrains)"))
-            {
-                ClearConsole();
-                var previewList = CollectSnapshots(onlySnapshotList: true);
-                Debug.Log($"[TileSceneGenerator] Found {previewList.Count} terrain(s): {string.Join(", ", previewList.Select(s => s.label))}");
-            }
-        }
-
-        settings = (TileSliceSettings)EditorGUILayout.ObjectField(
-            new GUIContent("Shared Settings",
-                "ScriptableObject that stores slicer inputs and last exact results per terrain. " +
-                "The gizmo reads from this to draw exactly what was sliced."),
-            settings, typeof(TileSliceSettings), false);
-
-        if (settings == null && GUILayout.Button("Create TileSliceSettings asset here"))
-        {
-            var path = "Assets/TileSliceSettings.asset";
-            settings = ScriptableObject.CreateInstance<TileSliceSettings>();
-            AssetDatabase.CreateAsset(settings, path);
-            AssetDatabase.SaveAssets();
-            EditorGUIUtility.PingObject(settings);
-        }
-        
-        EditorGUILayout.LabelField("Grid Behaviour", EditorStyles.boldLabel);
-        EditorGUILayout.Space(6);
-
-        tileSizeMeters = EditorGUILayout.FloatField(
-            new GUIContent(
-                "Tile Size (meters)",
-                "Desired tile size in world meters.\n\n" +
-                "If 'Even Fit' is OFF, edges may have smaller leftover tiles.\n\n" +
-                "If 'Even Fit' is ON, the size adjusts to divide evenly."
-            ),
-            tileSizeMeters
-        );
-
-        evenFitNoRemainder = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Even Fit (no remainder tiles)",
-                "Adjust tile size slightly so width/height divide evenly into whole tiles."
-            ),
-            evenFitNoRemainder
-        );
-
-        using (new EditorGUI.IndentLevelScope())
-        {
-            forceSquareTiles = EditorGUILayout.ToggleLeft(
-                new GUIContent(
-                    "Force Square Tiles",
-                    "When Even Fit is ON, makes each tile square (same X/Z size)."
-                ),
-                forceSquareTiles
-            );
-        }
-        
-        EditorGUILayout.Space();
-        
-        copyHeights = EditorGUILayout.ToggleLeft(
-            new GUIContent("Copy Heights", "Copies terrain height data into each tile."),
-            copyHeights
-        );
-        copyAlphamaps = EditorGUILayout.ToggleLeft(
-            new GUIContent("Copy Splatmaps (Textures)", "Copies texture splatmap data (terrain painting) into tiles. Slower, larger output."),
-            copyAlphamaps
-        );
-        copyDetails = EditorGUILayout.ToggleLeft(
-            new GUIContent("Copy Details (Grass)", "Copies terrain detail layers (grass). Requires matching prototypes."),
-            copyDetails
-        );
-        copyTrees = EditorGUILayout.ToggleLeft(
-            new GUIContent("Copy Trees", "Copies tree instances into the tiles."),
-            copyTrees
-        );
-        copyProps = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Copy Props (TileProp)",
-                "Copies all prefabs that contain TileProp markers, parents them under tile-local roots, and saves a PropTileData asset per tile for deterministic reloads."),
-            copyProps
-        );
-
-        EditorGUILayout.HelpBox(
-            "Enabling splats, details, trees, and props is far heavier than copying heights only. " +
-            "If you just need to validate slicing, run a fast pass first, then switch back to full fidelity before final export.",
-            MessageType.Info);
-
-        EditorGUILayout.HelpBox(
-            "Tiles now write terrain data to TerrainData/ and props to Props/ with tile-local transforms. " +
-            "Terrain resolutions must divide evenly across the grid; adjust Tile Size (meters) so heightmaps, alphamaps, and detail maps slice without seams.",
-            MessageType.None);
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Preset: Fast (heights only)", GUILayout.Width(200f)))
-            {
-                copyHeights = true;
-                copyAlphamaps = false;
-                copyDetails = false;
-                copyTrees = false;
-                copyProps = false;
-            }
-
-            if (GUILayout.Button("Preset: Full fidelity (all channels)", GUILayout.Width(240f)))
-            {
-                copyHeights = true;
-                copyAlphamaps = true;
-                copyDetails = true;
-                copyTrees = true;
-                copyProps = true;
-            }
-        }
-        
-        // Preview all candidate terrains using the exact rules used by slicing
-        if (!_isRunning)
-        {
-            var snaps = CollectSnapshots(onlySnapshotList: true);
-            if (snaps != null && snaps.Count > 0)
-            {
-                int grandTotal = 0;
-                var sb = new StringBuilder(512);
-                sb.AppendLine("Preview:");
-
-                // Loop through all terrains that will be sliced
-                foreach (var s in snaps)
-                {
-                    ComputePreviewGridFor(s.data, out int nx, out int ny, out float fx, out float fy);
-                    grandTotal += nx * ny;
-
-                    var sz = s.data.size;
-
-                    // Align columns with padding
-                    string label = s.label.PadRight(20);
-                    string sizeStr = $"{sz.x,6:0.#}×{sz.z,-6:0.#}";
-                    string tilesStr = $"{nx,3}×{ny,-3}";
-                    string tileSizeStr = $"{fx,5:0.#}×{fy,-5:0.#}";
-                    sb.AppendLine($"{label} | {sizeStr} m | {tilesStr} tiles @ {tileSizeStr} m");
-                }
-
-                sb.AppendLine(new string('-', 70));
-                sb.AppendLine($"Total tiles: {grandTotal}");
-                sb.AppendLine($"Options: evenFit={evenFitNoRemainder}, squares={forceSquareTiles}, desired≈{tileSizeMeters:0.##} m");
-
-                // Monospace display, no internal scrolling
-                GUIStyle monoStyle = new GUIStyle(EditorStyles.label)
-                {
-                    font = EditorGUIUtility.Load("Fonts/RobotoMono/RobotoMono-Regular.ttf") as Font,
-                    richText = false,
-                    wordWrap = false,
-                    fontSize = 11,
-                    normal = { textColor = EditorStyles.label.normal.textColor }
-                };
-                if (monoStyle.font == null)
-                    monoStyle.font = Font.CreateDynamicFontFromOSFont("Consolas", 11);
-
-                EditorGUILayout.BeginVertical("box");
-                EditorGUILayout.Space(2);
-
-                foreach (var line in sb.ToString().Split('\n'))
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    EditorGUILayout.LabelField(line, monoStyle);
-                }
-
-                EditorGUILayout.Space(2);
-                EditorGUILayout.EndVertical();
-            }
-            else
-            {
-                EditorGUILayout.HelpBox("No terrains found for preview. Check auto-collect prefix or assign terrains manually.", MessageType.Warning);
-            }
-        }
-
-        // Output settings
-        sceneNamePattern = EditorGUILayout.TextField(
-            new GUIContent(
-                "Scene Name Pattern",
-                "Pattern for naming generated tile scenes. Use tokens:\n" +
-                "  {t} = Terrain name\n  {x} = Tile column index\n  {y} = Tile row index\n\n" +
-                "Example: {t}_Tile_{x}_{y} → TerrainMain_Tile_2_3.unity"
-            ),
-            sceneNamePattern
-        );
-
-        outputFolder = EditorGUILayout.TextField(
-            new GUIContent(
-                "Output Root Folder",
-                "Base folder (under Assets/) where tile scenes and terrain data will be generated. " +
-                "Each terrain gets its own subfolder if 'Subfolder Per Terrain' is enabled."
-            ),
-            outputFolder
-        );
-
-        terrainDataPrefix = EditorGUILayout.TextField(
-            new GUIContent(
-                "TerrainData Prefix",
-                "Prefix for saved TerrainData assets inside the 'TerrainData' subfolder. " +
-                "Final names look like: TD_<terrain>_<x>_<y>.asset"
-            ),
-            terrainDataPrefix
-        );
-
-        subfolderPerTerrain = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Subfolder Per Terrain",
-                "If enabled, each terrain’s tiles are saved inside its own subfolder under the root output folder. " +
-                "Keeps multi-terrain projects neatly organized."
-            ),
-            subfolderPerTerrain
-        );
-
-        EditorGUILayout.Space();
-
-        // Re-slice behaviour
-        nonDestructiveReslice = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Non-Destructive Re-slice",
-                "When enabled, the tool updates only the TerrainData inside existing tile scenes, " +
-                "leaving all your manually placed props, lighting, and scene setup untouched."
-            ),
-            nonDestructiveReslice
-        );
-
-        onlyUpdateIfChanged = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Only Update If Changed (heights)",
-                "When enabled, tiles are skipped if their heightmaps are identical to the source terrain. " +
-                "Speeds up re-slicing when only a few tiles have changed."
-            ),
-            onlyUpdateIfChanged
-        );
-
-        addToBuildSettings = EditorGUILayout.ToggleLeft(
-            new GUIContent(
-                "Ensure In Build Settings",
-                "Automatically adds all generated tile scenes to the Unity Build Settings. " +
-                "Recommended if you plan to load them via additive scene streaming at runtime."
-            ),
-            addToBuildSettings
-        );
-        
-        if (GUILayout.Button("Clean Build Settings (Remove Missing Scenes)"))
-        {
-            RemoveMissingScenesFromBuildSettings(true);
-        }
-        
-        EditorGUILayout.Space(6);
-        EditorGUILayout.LabelField("Generated Output Cleanup", EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox(
-            "Use these tools to reveal or delete generated tile scenes and tile asset output folders derived from current settings.",
-            MessageType.None);
-
-        using (new EditorGUI.DisabledScope(_isRunning))
-        {
-            if (GUILayout.Button("Reveal Output Folder"))
-                RevealGeneratedOutputFolder();
-
-            if (GUILayout.Button("Delete Generated Tile Scenes"))
-                DeleteGeneratedTileScenesWithConfirmation();
-
-            if (GUILayout.Button("Delete Generated TerrainData/Assets"))
-                DeleteGeneratedTileAssetsWithConfirmation();
-
-            if (GUILayout.Button("Delete ALL Generated Tile Output"))
-                DeleteAllGeneratedOutputWithConfirmation();
-        }
-
-        EditorGUILayout.Space();
-        using (new EditorGUI.DisabledScope(!CanRun()))
-        {
-            if (GUILayout.Button("Run Slice / Re-slice"))
-            {
-                try
-                {
-                    RunForAllTerrains();
-                    EditorUtility.DisplayDialog("Tile Scene Generator", "All terrains processed successfully.", "Great");
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[TileSceneGenerator] Failed: {ex}");
-                    EditorUtility.DisplayDialog("Tile Scene Generator", $"Failed:\n{ex.Message}", "OK");
-                }
-            }
-        }
-
-        GUI.enabled = true;
-
-        EditorGUILayout.HelpBox(
-            "Workflow:\n" +
-            "1) Keep a MASTER scene with the full terrain(s) for editing.\n" +
-            "2) Generate tiles once.\n" +
-            "3) When you change a terrain, re-run — tile scenes update in-place (keeps props).\n\n" +
-            "Tips:\n" +
-            "• Commit or back up before large re-slices.\n" +
-            "• After reslicing, re-bake NavMesh/Lighting per tile.\n" +
-            "• Generated scenes can be auto-added to Build Settings.",
-            MessageType.Info);
-        
-        EditorGUILayout.EndScrollView();
-    }
-
-    private bool CanRun()
+    public bool CanRun()
     {
         if (autoCollectTerrains) return (Terrain.activeTerrains?.Length ?? 0) > 0;
         return sourceTerrains != null && sourceTerrains.Any(t => t != null);
     }
+
+    public void EnsureReadyForUi()
+    {
+        EnsureSettingsAsset();
+    }
+
+    public void AutoFillAndLogTerrains()
+    {
+        ClearConsole();
+        var previewList = CollectSnapshots(onlySnapshotList: true);
+        Debug.Log($"[TileSceneGenerator] Found {previewList.Count} terrain(s): {string.Join(", ", previewList.Select(s => s.label))}");
+    }
+
+    public string BuildPreviewText()
+    {
+        var snaps = CollectSnapshots(onlySnapshotList: true);
+        if (snaps == null || snaps.Count == 0)
+            return string.Empty;
+
+        int grandTotal = 0;
+        var sb = new StringBuilder(512);
+        sb.AppendLine("Preview:");
+
+        foreach (var s in snaps)
+        {
+            ComputePreviewGridFor(s.data, out int nx, out int ny, out float fx, out float fy);
+            grandTotal += nx * ny;
+
+            var sz = s.data.size;
+            string label = s.label.PadRight(20);
+            string sizeStr = $"{sz.x,6:0.#}×{sz.z,-6:0.#}";
+            string tilesStr = $"{nx,3}×{ny,-3}";
+            string tileSizeStr = $"{fx,5:0.#}×{fy,-5:0.#}";
+            sb.AppendLine($"{label} | {sizeStr} m | {tilesStr} tiles @ {tileSizeStr} m");
+        }
+
+        sb.AppendLine(new string('-', 70));
+        sb.AppendLine($"Total tiles: {grandTotal}");
+        sb.AppendLine($"Options: evenFit={evenFitNoRemainder}, squares={forceSquareTiles}, desired≈{tileSizeMeters:0.##} m");
+        return sb.ToString();
+    }
+
+    public void RunSliceWithDialogs()
+    {
+        try
+        {
+            RunForAllTerrains();
+            EditorUtility.DisplayDialog("Tile Scene Generator", "All terrains processed successfully.", "Great");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[TileSceneGenerator] Failed: {ex}");
+            EditorUtility.DisplayDialog("Tile Scene Generator", $"Failed:\n{ex.Message}", "OK");
+        }
+    }
     
+
+    public void CleanBuildSettingsWithDialog() => RemoveMissingScenesFromBuildSettings(true);
+    public void RevealOutputFolder() => RevealGeneratedOutputFolder();
+    public void DeleteGeneratedScenesWithDialog() => DeleteGeneratedTileScenesWithConfirmation();
+    public void DeleteGeneratedAssetsWithDialog() => DeleteGeneratedTileAssetsWithConfirmation();
+    public void DeleteAllGeneratedOutputWithDialog() => DeleteAllGeneratedOutputWithConfirmation();
+
     private const string LegacyTilesScenesRoot = "Assets/Level/Scenes/Tiles";
     private const string TileSceneNameRegex = ".*Tile.*";
     
