@@ -55,6 +55,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private bool masterDisabled;
     private bool masterWorkRunning;
+    private bool firstTileLoadConfirmed;
 
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
@@ -116,6 +117,7 @@ public class TileStreamCoordinator : NetworkBehaviour
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
         masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
+        firstTileLoadConfirmed = liveTiles.Count > 0;
     }
 
     private void OnValidate()
@@ -451,6 +453,11 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private IEnumerator EnsureMasterTerrainDisabled()
     {
+        if (!ShouldDisableMasterTerrainNow())
+        {
+            yield break;
+        }
+        
         // If someone else is already doing the work, wait for them.
         if (masterWorkRunning)
         {
@@ -515,6 +522,36 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         masterWorkRunning = false;
     }
+    
+    private bool ShouldDisableMasterTerrainNow()
+    {
+        if (masterTerrain == null)
+        {
+            return true;
+        }
+
+        if (masterDisabled)
+        {
+            return true;
+        }
+
+        if (liveTiles.Count > 0)
+        {
+            firstTileLoadConfirmed = true;
+        }
+
+        return firstTileLoadConfirmed && liveTiles.Count > 0;
+    }
+
+    private void WarnIfMasterDisabledWithoutLoadedTiles(string requestedPath)
+    {
+        if (!masterDisabled || liveTiles.Count > 0)
+        {
+            return;
+        }
+
+        Debug.LogWarning($"[TileStream] Tile load failed for '{requestedPath}' while master terrain is disabled and there are no live tiles. Players may fall through the world.");
+    }
 
     private IEnumerator LoadSceneInternal(string path, bool isServer, bool log)
     {
@@ -574,6 +611,8 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             IncrementClientLoadsThisFrame();
         }
+        
+        firstTileLoadConfirmed = true;
     }
 
     private IEnumerator UnloadSceneInternal(string path, bool isServer, bool log)
@@ -755,14 +794,25 @@ public class TileStreamCoordinator : NetworkBehaviour
                 if (owner.index != null && owner.index.TryGetByScene(path, out var record))
                 {
                     live[path] = new TileInstance(record, existing);
+                    owner.firstTileLoadConfirmed = true;
                     owner.WireTerrainNeighbors(path);
                     if (isServer) owner.IncrementServerLoadsThisFrame(); else owner.IncrementClientLoadsThisFrame();
                 }
+                
+                yield return owner.EnsureMasterTerrainDisabled();
                 yield break;
             }
 
-            yield return owner.EnsureMasterTerrainDisabled();
             yield return owner.LoadSceneInternal(path, isServer, log);
+            
+            if (live.TryGetValue(path, out var loaded) && loaded.Scene.isLoaded)
+            {
+                yield return owner.EnsureMasterTerrainDisabled();
+            }
+            else
+            {
+                owner.WarnIfMasterDisabledWithoutLoadedTiles(path);
+            }
         }
 
         public IEnumerator Unload(string path, bool isServer, bool log)
@@ -770,7 +820,6 @@ public class TileStreamCoordinator : NetworkBehaviour
             if (string.IsNullOrEmpty(path)) yield break;
             if (!live.ContainsKey(path)) yield break;
 
-            yield return owner.EnsureMasterTerrainDisabled();
             yield return owner.UnloadSceneInternal(path, isServer, log);
             live.Remove(path);
         }
@@ -780,10 +829,51 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         private readonly TileIndex index;
         private readonly List<Vector3> cachedPositions = new();
+        private readonly Dictionary<Vector2Int, List<TileIndex.TileRecord>> tilesByCoord = new();
+        private readonly List<TileIndex.TileRecord> coordQueryScratch = new();
+        private readonly float minTileDimension;
+        private readonly float maxTileHalfDiagonal;
 
         public TileStreamer(TileIndex index)
         {
             this.index = index;
+            
+            if (index == null)
+            {
+                minTileDimension = 1f;
+                maxTileHalfDiagonal = 0f;
+                return;
+            }
+
+            var tileSize = index.TileSizeMeters;
+            minTileDimension = Mathf.Max(1f, Mathf.Min(Mathf.Abs(tileSize.x), Mathf.Abs(tileSize.y)));
+
+            float computedMaxHalfDiagonal = 0f;
+            var tiles = index.Tiles;
+            for (int i = 0; i < tiles.Count; ++i)
+            {
+                var record = tiles[i];
+                if (string.IsNullOrEmpty(record.scenePath))
+                {
+                    continue;
+                }
+
+                if (!tilesByCoord.TryGetValue(record.coord, out var bucket))
+                {
+                    bucket = new List<TileIndex.TileRecord>(1);
+                    tilesByCoord.Add(record.coord, bucket);
+                }
+
+                bucket.Add(record);
+
+                float halfDiagonal = record.worldBounds.extents.magnitude;
+                if (halfDiagonal > computedMaxHalfDiagonal)
+                {
+                    computedMaxHalfDiagonal = halfDiagonal;
+                }
+            }
+
+            maxTileHalfDiagonal = computedMaxHalfDiagonal;
         }
 
         public void ComputeDesired(IEnumerable<Vector3> positions, float loadRadiusSquared, float unloadRadiusSquared, HashSet<string> current, HashSet<string> output)
@@ -806,18 +896,42 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
         {
-            var tiles = index.Tiles;
-            for (int i = 0; i < tiles.Count; ++i)
-            {
-                var record = tiles[i];
-                if (string.IsNullOrEmpty(record.scenePath))
-                {
-                    continue;
-                }
+            CollectCandidateTiles(position, radiusSquared, coordQueryScratch);
 
+            for (int i = 0; i < coordQueryScratch.Count; ++i)
+            {
+                var record = coordQueryScratch[i];
                 if (record.worldBounds.SqrDistance(position) <= radiusSquared)
                 {
                     destination.Add(record.scenePath);
+                }
+
+                private void CollectCandidateTiles(Vector3 position, float radiusSquared, List<TileIndex.TileRecord> destination)
+                {
+                    destination.Clear();
+                    if (tilesByCoord.Count == 0)
+                    {
+                        return;
+                    }
+
+                    float radius = Mathf.Sqrt(Mathf.Max(0f, radiusSquared));
+                    float paddedRadius = radius + maxTileHalfDiagonal;
+                    int coordRadius = Mathf.Max(0, Mathf.CeilToInt(paddedRadius / minTileDimension));
+
+                    Vector2Int centerCoord = index.WorldToTile(position);
+                    for (int dx = -coordRadius; dx <= coordRadius; ++dx)
+                    {
+                        for (int dy = -coordRadius; dy <= coordRadius; ++dy)
+                        {
+                            var coord = new Vector2Int(centerCoord.x + dx, centerCoord.y + dy);
+                            if (!tilesByCoord.TryGetValue(coord, out var bucket))
+                            {
+                                continue;
+                            }
+
+                            destination.AddRange(bucket);
+                        }
+                    }
                 }
             }
         }

@@ -14,6 +14,8 @@ using System.Text;
 
 public sealed class TileSceneGenerator : ScriptableObject
 {
+    public const string CanonicalSettingsAssetPath = "Assets/TileSliceSettings.asset";
+    
     // UI / runtime guard
     private bool _isRunning;
     private Stopwatch _globalTimer;
@@ -55,13 +57,14 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     // Output
     [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
-    [SerializeField] private string outputFolder = "Assets/Scenes/Tiles";
+    [SerializeField] private string outputFolder = "Assets/Tiles";
     [SerializeField] private string terrainDataPrefix = "TD_"; // saved as TD_<t>_<x>_<y>.asset
     [SerializeField] private bool subfolderPerTerrain = true;
 
     private string _outputScenesFolder;
     private string _outputDataFolder;
     private string _outputPropsFolder;
+    private bool _outputWriteFoldersEnsured;
 
     // Copy Channels
     [SerializeField] private bool copyHeights = true;
@@ -72,8 +75,9 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     // Reslice Options
     [SerializeField] private bool nonDestructiveReslice = true; // update TerrainData in existing scenes, keep other objects
-    [SerializeField] private bool onlyUpdateIfChanged = false; // small speed-up by skipping identical tiles (height-only compare)
+    [SerializeField] private bool onlyUpdateIfChanged; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
+    [SerializeField] private bool clearConsoleBeforeActions;
 
     
     
@@ -85,7 +89,56 @@ public sealed class TileSceneGenerator : ScriptableObject
         public Vector3 origin; // cached world position
     }
 
+    private sealed class PropCandidateCache
+    {
+        private readonly Dictionary<Vector2Int, List<GameObject>> _tileBins;
+        private static readonly List<GameObject> Empty = new(0);
+
+        public int TotalCandidates { get; }
+
+        public PropCandidateCache(List<GameObject> candidates, Vector3 terrainOrigin, Vector3 tileSize, int tileCountX, int tileCountY)
+        {
+            _tileBins = new Dictionary<Vector2Int, List<GameObject>>(Mathf.Max(1, tileCountX * tileCountY));
+            if (candidates == null || candidates.Count == 0)
+            {
+                TotalCandidates = 0;
+                return;
+            }
+
+            TotalCandidates = candidates.Count;
+
+            foreach (var candidate in candidates)
+            {
+                if (candidate == null) continue;
+
+                Vector3 p = candidate.transform.position;
+                int tx = Mathf.FloorToInt((p.x - terrainOrigin.x) / tileSize.x);
+                int ty = Mathf.FloorToInt((p.z - terrainOrigin.z) / tileSize.z);
+
+                if (tx < 0 || tx >= tileCountX || ty < 0 || ty >= tileCountY)
+                    continue;
+
+                var key = new Vector2Int(tx, ty);
+                if (!_tileBins.TryGetValue(key, out var list))
+                {
+                    list = new List<GameObject>();
+                    _tileBins.Add(key, list);
+                }
+
+                list.Add(candidate);
+            }
+        }
+
+        public List<GameObject> GetTileCandidates(int tx, int ty)
+        {
+            return _tileBins.TryGetValue(new Vector2Int(tx, ty), out var list) ? list : Empty;
+        }
+    }
+    
     public bool IsRunning => _isRunning;
+    
+    private int _runCounter;
+    private string _activeRunId = "idle";
 
     public bool CanRun()
     {
@@ -97,12 +150,26 @@ public sealed class TileSceneGenerator : ScriptableObject
     {
         EnsureSettingsAsset();
     }
+    
+    public string[] FindAllSettingsAssetPaths()
+    {
+        var guids = AssetDatabase.FindAssets("t:TileSliceSettings");
+        if (guids == null || guids.Length == 0)
+            return Array.Empty<string>();
+
+        return guids
+            .Select(AssetDatabase.GUIDToAssetPath)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     public void AutoFillAndLogTerrains()
     {
-        ClearConsole();
+        BeginOperation("Auto-fill Terrains");
         var previewList = CollectSnapshots(onlySnapshotList: true);
-        Debug.Log($"[TileSceneGenerator] Found {previewList.Count} terrain(s): {string.Join(", ", previewList.Select(s => s.label))}");
+        Log($"Found {previewList.Count} terrain(s): {string.Join(", ", previewList.Select(s => s.label))}");
     }
 
     public string BuildPreviewText()
@@ -136,7 +203,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     public void RunSliceWithDialogs()
     {
-        ClearConsole();
+        BeginOperation("Slice / Re-slice");
         
         try
         {
@@ -145,7 +212,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[TileSceneGenerator] Failed: {ex}");
+            LogError($"Failed: {ex}");
             EditorUtility.DisplayDialog("Tile Scene Generator", $"Failed:\n{ex.Message}", "OK");
         }
     }
@@ -153,31 +220,31 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     public void CleanBuildSettingsWithDialog()
     {
-        ClearConsole();
+        BeginOperation("Clean Build Settings");
         RemoveMissingScenesFromBuildSettings(true);
     }
 
     public void RevealOutputFolder()
     {
-        ClearConsole();
+        BeginOperation("Reveal Output Folder");
         RevealGeneratedOutputFolder();
     }
 
     public void DeleteGeneratedScenesWithDialog()
     {
-        ClearConsole();
+        BeginOperation("Delete Generated Tile Scenes");
         DeleteGeneratedTileScenesWithConfirmation();
     }
 
     public void DeleteGeneratedAssetsWithDialog()
     {
-        ClearConsole();
+        BeginOperation("Delete Generated TerrainData/Assets");
         DeleteGeneratedTileAssetsWithConfirmation();
     }
 
     public void DeleteAllGeneratedOutputWithDialog()
     {
-        ClearConsole();
+        BeginOperation("Delete ALL Generated Tile Output");
         DeleteAllGeneratedOutputWithConfirmation();
     }
 
@@ -511,13 +578,11 @@ public sealed class TileSceneGenerator : ScriptableObject
 
         string absolute = Path.GetFullPath(revealTarget);
         EditorUtility.RevealInFinder(absolute);
-        Debug.Log($"[TileSceneGenerator] Revealed tile output folder: {revealTarget}");
+        Log($"Revealed tile output folder: {revealTarget}");
     }
 
     private void DeleteGeneratedTileScenesWithConfirmation()
     {
-        ClearConsole();
-        
         var paths = CollectGeneratedOutputPaths();
 
         string[] discovered = DiscoverAdditionalSceneFolders(paths);
@@ -547,13 +612,11 @@ public sealed class TileSceneGenerator : ScriptableObject
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log($"[TileSceneGenerator] Cleanup complete. scenes deleted={sceneCount}");
+        Log($"Cleanup complete. scenes deleted={sceneCount}");
     }
 
     private void DeleteGeneratedTileAssetsWithConfirmation()
     {
-        ClearConsole();
-        
         var paths = CollectGeneratedOutputPaths();
 
         string[] discovered = DiscoverAdditionalTerrainAssetFolders(paths);
@@ -586,13 +649,11 @@ public sealed class TileSceneGenerator : ScriptableObject
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log($"[TileSceneGenerator] Cleanup complete. assets deleted={terrainCount + otherAssetsCount}");
+        Log($"Cleanup complete. assets deleted={terrainCount + otherAssetsCount}");
     }
 
     private void DeleteAllGeneratedOutputWithConfirmation()
     {
-        ClearConsole();
-
         var paths = CollectGeneratedOutputPaths();
 
         string[] folders = paths.GetAllFolders()
@@ -622,7 +683,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Debug.Log($"[TileSceneGenerator] Cleanup complete. scenes deleted={sceneCount}, assets deleted={terrainCount + otherAssetsCount}, folders=[{string.Join(", ", folders)}]");
+        Log($"Cleanup complete. scenes deleted={sceneCount}, assets deleted={terrainCount + otherAssetsCount}, folders=[{string.Join(", ", folders)}]");
     }
 
     private bool ConfirmCleanup(string title, string message, IEnumerable<string> folders)
@@ -773,8 +834,8 @@ public sealed class TileSceneGenerator : ScriptableObject
             .OrderBy(f => f)
             .ToArray();
 
-        Debug.Log(
-            $"[TileSceneGenerator] {label}\n" +
+        Log(
+            $"{label}\n" +
             $"Count: {list.Length}\n" +
             string.Join("\n", list.Select(f => $"  • {f}"))
         );
@@ -797,12 +858,23 @@ public sealed class TileSceneGenerator : ScriptableObject
             var snapshots = CollectSnapshots();
             if (snapshots.Count == 0)
                 throw new InvalidOperationException("No valid terrains found. Check auto-collect prefix or assign terrains manually.");
-
-            Debug.Log($"[TileSceneGenerator] Will process {snapshots.Count} terrain(s): {string.Join(", ", snapshots.Select(s => s.label))}");
-
-            string originalOutputRoot = outputFolder;
-
             
+            var allTileIndexRecords = new List<TileIndex.TileRecord>();
+            int expectedTileCount = 0;
+            Vector2? sharedTileSize2D = null;
+            Vector2? sharedOriginOffset = null;
+
+            Log($"Will process {snapshots.Count} terrain(s): {string.Join(", ", snapshots.Select(s => s.label))}");
+
+            string originalOutputRoot = NormalizeAssetPath(outputFolder);
+
+            if (subfolderPerTerrain && TryGetKnownTerrainLabelSuffix(originalOutputRoot, snapshots, out string matchedTerrainLabel))
+            {
+                throw new InvalidOperationException(
+                    $"Output folder '{originalOutputRoot}' already ends with terrain label '{matchedTerrainLabel}' while 'Subfolder Per Terrain' is enabled. " +
+                    "Use a neutral root (for example 'Assets/Tiles') so folders are generated only once per terrain.");
+            }
+
             EnsureSettingsAsset();
             // loop through each terrain and time individually
             foreach (var snap in snapshots)
@@ -816,7 +888,9 @@ public sealed class TileSceneGenerator : ScriptableObject
                 _srcTD               = snap.data;
                 Vector3 cachedOrigin = snap.origin;
 
-                outputFolder = subfolderPerTerrain ? $"{originalOutputRoot}/{_currentTerrainLabel}" : originalOutputRoot;
+                string perTerrainOutputRoot = subfolderPerTerrain
+                    ? NormalizeAssetPath($"{originalOutputRoot}/{_currentTerrainLabel}")
+                    : originalOutputRoot;
 
                 _gizmoStatus[_currentTerrainLabel] = settings ? "unchanged" : "n/a (no TileSliceSettings)";
                 
@@ -825,18 +899,37 @@ public sealed class TileSceneGenerator : ScriptableObject
                 bool isMaster = IsMasterTerrainLabel(_currentTerrainLabel);
                 AutoFixTilesToDivisibleResolutionsIfNeeded(requireSquareTiles: isMaster);
                 
-                ValidateInputs();
+                ValidateInputs(perTerrainOutputRoot);
                 DeleteOldTileScenes(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
                 DeleteOldTerrainDataAssets(_outputDataFolder, _currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
                 DeleteOldPropDataAssets(_outputPropsFolder, _currentTerrainLabel, tilesX, tilesY);
-                RemoveOldBuildSettingsEntries(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
+                var currentGeneratedSceneManifest = BuildGeneratedScenePathManifest(_outputScenesFolder, tilesX, tilesY);
+                RemoveOldBuildSettingsEntries(_currentTerrainLabel, currentGeneratedSceneManifest);
                 
                 if (settings && settings.TryGet(_currentTerrainLabel, out var r))
                 {
                     r.origin = cachedOrigin; 
                     EditorUtility.SetDirty(settings);
                 }
-                RunSliceOrReslice(cachedOrigin);
+                var terrainRecords = RunSliceOrReslice(cachedOrigin);
+                allTileIndexRecords.AddRange(terrainRecords);
+                expectedTileCount += tilesX * tilesY;
+
+                var terrainTileSize2D = new Vector2(_srcTD.size.x / tilesX, _srcTD.size.z / tilesY);
+                if (sharedTileSize2D == null)
+                {
+                    sharedTileSize2D = terrainTileSize2D;
+                }
+                else if (sharedTileSize2D.Value != terrainTileSize2D)
+                {
+                    Debug.LogWarning(
+                        $"[TileSceneGenerator] Terrain '{_currentTerrainLabel}' has tile size {terrainTileSize2D}, " +
+                        $"but prior terrains used {sharedTileSize2D.Value}. TileIndex tile size remains {sharedTileSize2D.Value}."
+                    );
+                }
+
+                if (sharedOriginOffset == null)
+                    sharedOriginOffset = new Vector2(cachedOrigin.x, cachedOrigin.z);
 
                 terrainTimer.Stop(); // stop individual timer
                 
@@ -873,11 +966,9 @@ public sealed class TileSceneGenerator : ScriptableObject
                 _finalContentSummary[_currentTerrainLabel] = contentLine;
 
                 // Emit ONE log for this terrain (includes grid line, gizmo status, finish time, and the change summary)
-                Debug.Log(_terrainLog.ToString());
-
-                // restore output root if you temporarily changed it
-                outputFolder = originalOutputRoot;
+                Log(_terrainLog.ToString());
             }
+            WriteMergedTileIndex(allTileIndexRecords, expectedTileCount, sharedTileSize2D, sharedOriginOffset);
         }
         finally
         {
@@ -928,7 +1019,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 sb.AppendLine($"  • {labelPadded}: {contentPadded}(gizmo {row.Gizmo})");
             }
 
-            Debug.Log(sb.ToString());
+            Log(sb.ToString());
 
             _changedTerrains.Clear();
             _finalContentSummary.Clear();
@@ -963,7 +1054,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 // Out of range → delete scene
                 if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
                 {
-                    Debug.Log($"[TileSceneGenerator] Deleting old tile scene: {file}");
+                    Log($"Deleting old tile scene: {file}");
                     AssetDatabase.DeleteAsset(file);
                 }
             }
@@ -994,7 +1085,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             {
                 if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
                 {
-                    Debug.Log($"[TileSceneGenerator] Deleting old TerrainData: {file}");
+                    Log($"Deleting old TerrainData: {file}");
                     AssetDatabase.DeleteAsset(file);
                 }
             }
@@ -1023,44 +1114,66 @@ public sealed class TileSceneGenerator : ScriptableObject
             {
                 if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
                 {
-                    Debug.Log($"[TileSceneGenerator] Deleting old PropTileData: {file}");
+                    Log($"Deleting old PropTileData: {file}");
                     AssetDatabase.DeleteAsset(file);
                 }
             }
         }
     }
     
-    private void RemoveOldBuildSettingsEntries(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
+    private HashSet<string> BuildGeneratedScenePathManifest(string scenesFolder, int tilesX, int tilesY)
+    {
+        var manifest = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int tx = 0; tx < tilesX; tx++)
+        {
+            for (int ty = 0; ty < tilesY; ty++)
+            {
+                string sceneName = ReplaceTokens(sceneNamePattern, tx, ty);
+                string scenePath = $"{scenesFolder}/{sceneName}.unity".Replace("\\", "/");
+                manifest.Add(scenePath);
+            }
+        }
+
+        return manifest;
+    }
+
+    private static bool IsGeneratedTileSceneForTerrain(string scenePath, string terrainLabel)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath) || string.IsNullOrWhiteSpace(terrainLabel))
+            return false;
+
+        string name = Path.GetFileNameWithoutExtension(scenePath);
+        if (!name.Contains(terrainLabel, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var parts = name.Split('_');
+        if (parts.Length < 2)
+            return false;
+
+        return int.TryParse(parts[^2], out _) && int.TryParse(parts[^1], out _);
+    }
+
+    private static void RemoveOldBuildSettingsEntries(string terrainLabel, HashSet<string> currentGeneratedSceneManifest)
     {
         var list = EditorBuildSettings.scenes.ToList();
         bool changed = false;
 
         for (int i = list.Count - 1; i >= 0; i--)
         {
-            var s = list[i];
+            var scene = list[i];
+            string path = scene.path.Replace("\\", "/");
 
-            if (!s.path.Contains(scenesFolder))
-                continue;
-
-            string name = Path.GetFileNameWithoutExtension(s.path);
-
-            if (!name.Contains(terrainLabel))
+            if (!IsGeneratedTileSceneForTerrain(path, terrainLabel))
                 continue;
 
             // Extract x,y
-            var parts = name.Split('_');
-            if (parts.Length < 3)
+            if (currentGeneratedSceneManifest.Contains(path))
                 continue;
 
-            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
-            {
-                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
-                {
-                    Debug.Log($"[TileSceneGenerator] Removing old BuildSettings scene: {s.path}");
-                    list.RemoveAt(i);
-                    changed = true;
-                }
-            }
+            Debug.Log($"[TileSceneGenerator] Removing stale BuildSettings tile scene: {path}");
+            list.RemoveAt(i);
+            changed = true;
         }
 
         if (changed)
@@ -1415,28 +1528,63 @@ public sealed class TileSceneGenerator : ScriptableObject
     }
 
 
-    private void ValidateInputs()
+    private static bool TryGetKnownTerrainLabelSuffix(string rootPath, IEnumerable<TerrainSnapshot> snapshots, out string matchedLabel)
+    {
+        matchedLabel = null;
+        string normalizedRoot = NormalizeAssetPath(rootPath);
+        if (string.IsNullOrWhiteSpace(normalizedRoot))
+            return false;
+
+        string rootLeaf = Path.GetFileName(normalizedRoot);
+        if (string.IsNullOrWhiteSpace(rootLeaf))
+            return false;
+
+        foreach (var snap in snapshots)
+        {
+            if (snap == null || string.IsNullOrWhiteSpace(snap.label))
+                continue;
+
+            if (string.Equals(rootLeaf, snap.label, StringComparison.OrdinalIgnoreCase))
+            {
+                matchedLabel = snap.label;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void ValidateInputs(string effectiveOutputFolder)
     {
         if (_srcTD == null) throw new InvalidOperationException("Current Terrain has no TerrainData.");
         if (tilesX < 1 || tilesY < 1) throw new ArgumentOutOfRangeException(nameof(tilesX), "tilesX/tilesY must be ≥ 1.");
         if (string.IsNullOrWhiteSpace(sceneNamePattern) || !sceneNamePattern.Contains("{x}") || !sceneNamePattern.Contains("{y}"))
             throw new InvalidOperationException("Scene Name Pattern must include {x} and {y}. You can also use {t} for terrain name.");
-        if (!outputFolder.StartsWith("Assets"))
+        if (string.IsNullOrWhiteSpace(effectiveOutputFolder) || !effectiveOutputFolder.StartsWith("Assets", StringComparison.Ordinal))
             throw new InvalidOperationException("Output folder must be under Assets/.");
 
         // Create root + two subfolders
-        EnsureFolder(outputFolder);
+        EnsureFolder(effectiveOutputFolder);
 
-        string scenesFolder = Path.Combine(outputFolder, "Scenes").Replace("\\", "/");
-        string dataFolder   = Path.Combine(outputFolder, "TerrainData").Replace("\\", "/");
-        string propsFolder  = Path.Combine(outputFolder, "Props").Replace("\\", "/");
-        EnsureFolder(scenesFolder);
-        EnsureFolder(dataFolder);
-        EnsureFolder(propsFolder);
+        string scenesFolder = Path.Combine(effectiveOutputFolder, "Scenes").Replace("\\", "/");
+        string dataFolder   = Path.Combine(effectiveOutputFolder, "TerrainData").Replace("\\", "/");
+        string propsFolder  = Path.Combine(effectiveOutputFolder, "Props").Replace("\\", "/");
 
         _outputScenesFolder = scenesFolder;
         _outputDataFolder   = dataFolder;
-        _outputPropsFolder  = propsFolder;
+        _outputWriteFoldersEnsured = false;
+    }
+
+    private void EnsureOutputWriteFolders()
+    {
+        if (_outputWriteFoldersEnsured)
+            return;
+
+        EnsureFolder(outputFolder);
+        EnsureFolder(_outputScenesFolder);
+        EnsureFolder(_outputDataFolder);
+        EnsureFolder(_outputPropsFolder);
+        _outputWriteFoldersEnsured = true;
     }
 
     private static void EnsureFolder(string path)
@@ -1512,9 +1660,25 @@ public sealed class TileSceneGenerator : ScriptableObject
         var clearMethod = logEntries?.GetMethod("Clear", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
         clearMethod?.Invoke(null, null);
     }
+    
+    private void BeginOperation(string operationName)
+    {
+        if (clearConsoleBeforeActions)
+            ClearConsole();
+
+        _runCounter++;
+        _activeRunId = $"{DateTime.Now:HHmmss}-{_runCounter:000}";
+        Log($"Starting {operationName}.");
+    }
+
+    private string WithPrefix(string message) => $"[TileSceneGenerator][run:{_activeRunId}] {message}";
+
+    private void Log(string message) => Debug.Log(WithPrefix(message));
+    private void LogWarning(string message) => Debug.LogWarning(WithPrefix(message));
+    private void LogError(string message) => Debug.LogError(WithPrefix(message));
 
     // -------- core slicing (uses only cached data) --------
-    private void RunSliceOrReslice(Vector3 cachedOrigin)
+    private List<TileIndex.TileRecord> RunSliceOrReslice(Vector3 cachedOrigin)
     {
         ValidateResolutionDivisibility();
 
@@ -1546,8 +1710,8 @@ public sealed class TileSceneGenerator : ScriptableObject
 
             if (missingPrototypeCount > 0)
             {
-                Debug.LogWarning(
-                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
+                LogWarning(
+                    $"Source terrain '{_currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
                     "Tree instances using them will be skipped during slicing."
                 );
             }
@@ -1555,8 +1719,8 @@ public sealed class TileSceneGenerator : ScriptableObject
             if (treePrototypes == null || treePrototypes.Length == 0)
             {
                 treePrototypes = null;
-                Debug.LogWarning(
-                    $"[TileSceneGenerator] Source terrain '{_currentTerrainLabel}' does not contain any valid tree prefabs to copy."
+                LogWarning(
+                    $"Source terrain '{_currentTerrainLabel}' does not contain any valid tree prefabs to copy."
                 );
             }
         }
@@ -1568,6 +1732,13 @@ public sealed class TileSceneGenerator : ScriptableObject
 
         Scene masterScene = SceneManager.GetActiveScene();
         string originalScenePath = masterScene.path;
+        PropCandidateCache propCandidateCache = null;
+
+        if (copyProps)
+        {
+            var candidates = CollectPropCandidates(masterScene);
+            propCandidateCache = new PropCandidateCache(candidates, cachedOrigin, tileSize, tilesX, tilesY);
+        }
 
         try
         {
@@ -1580,6 +1751,8 @@ public sealed class TileSceneGenerator : ScriptableObject
                     float progress = processed / (float)total;
                     EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]",
                         $"Processing tile {tx},{ty}", progress);
+                    
+                    EnsureOutputWriteFolders();
 
                     // Build new TerrainData from the source master
                     TerrainData newTD = BuildTileTerrainData(
@@ -1655,7 +1828,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                             var terrainGO = FindOrCreateTerrainGO(tx, ty, newTD, tileSize, cachedOrigin, opened);
 
                             if (copyProps)
-                                CopyPropsIntoTileScene(masterScene, opened, tx, ty, tileSize, cachedOrigin, propAssetPath);
+                                CopyPropsIntoTileScene(opened, tx, ty, tileSize, cachedOrigin, propAssetPath, propCandidateCache);
 
                             EditorSceneManager.MarkSceneDirty(opened);
                             EditorSceneManager.SaveScene(opened);
@@ -1703,7 +1876,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                         if (col != null) col.enabled = true;
 
                         if (copyProps)
-                            CopyPropsIntoTileScene(masterScene, newScene, tx, ty, tileSize, cachedOrigin, propAssetPath);
+                            CopyPropsIntoTileScene(newScene, tx, ty, tileSize, cachedOrigin, propAssetPath, propCandidateCache);
 
                         EditorSceneManager.SaveScene(newScene, tileScenePath);
                         EditorSceneManager.CloseScene(newScene, true);
@@ -1740,18 +1913,8 @@ public sealed class TileSceneGenerator : ScriptableObject
                 }
             }
 
-            // Write TileIndex once all tiles are processed
-            if (settings != null && settings.tileIndex != null)
-            {
-                var tileSize2D = new Vector2(tileSize.x, tileSize.z);
-                settings.tileIndex.SetTileSizeMeters(tileSize2D);
-                settings.tileIndex.SetOriginOffset(new Vector2(cachedOrigin.x, cachedOrigin.z));
-                settings.tileIndex.SetTiles(tempIndexRecords);
-                EditorUtility.SetDirty(settings.tileIndex);
-                AssetDatabase.SaveAssets();
-            }
-
             AssetDatabase.Refresh();
+            return tempIndexRecords;
         }
         finally
         {
@@ -1762,8 +1925,40 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
 
     }
+    
+    private void WriteMergedTileIndex(
+        List<TileIndex.TileRecord> mergedRecords,
+        int expectedTileCount,
+        Vector2? sharedTileSize2D,
+        Vector2? sharedOriginOffset)
+    {
+        if (settings == null || settings.tileIndex == null)
+            return;
 
-    private void CopyPropsIntoTileScene(Scene masterScene, Scene tileScene, int tx, int ty, Vector3 tileSize, Vector3 terrainOrigin, string propAssetPath)
+        settings.tileIndex.SetTiles(mergedRecords);
+
+        if (sharedTileSize2D.HasValue)
+            settings.tileIndex.SetTileSizeMeters(sharedTileSize2D.Value);
+
+        if (sharedOriginOffset.HasValue)
+            settings.tileIndex.SetOriginOffset(sharedOriginOffset.Value);
+
+        EditorUtility.SetDirty(settings.tileIndex);
+        AssetDatabase.SaveAssets();
+
+        int indexedTileCount = settings.tileIndex.Tiles.Count;
+        if (indexedTileCount != expectedTileCount)
+        {
+            throw new InvalidOperationException(
+                $"[TileSceneGenerator] TileIndex validation failed: expected {expectedTileCount} tile(s), " +
+                $"but TileIndex contains {indexedTileCount}."
+            );
+        }
+
+        Debug.Log($"[TileSceneGenerator] TileIndex validation passed: {indexedTileCount}/{expectedTileCount} tiles indexed.");
+    }
+
+    private void CopyPropsIntoTileScene(Scene tileScene, int tx, int ty, Vector3 tileSize, Vector3 terrainOrigin, string propAssetPath, PropCandidateCache candidateCache)
     {
         string propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty;
         Vector3 tileOrigin = new Vector3(
@@ -1786,8 +1981,8 @@ public sealed class TileSceneGenerator : ScriptableObject
         propRoot.transform.localScale = Vector3.one;
         SceneManager.MoveGameObjectToScene(propRoot, tileScene);
 
-        var candidates = CollectPropCandidates(masterScene);
-        if (candidates.Count == 0)
+        var candidates = candidateCache?.GetTileCandidates(tx, ty);
+        if (candidates == null || candidates.Count == 0)
             return;
 
         float minX = tileOrigin.x;
@@ -2250,32 +2445,36 @@ public sealed class TileSceneGenerator : ScriptableObject
     
     private void EnsureSettingsAsset()
     {
-        if (settings != null) return;
-
-        string folder = string.IsNullOrWhiteSpace(this.folder) ? "Assets/Scripts/Tiles" : this.folder;
-        string defaultPath = $"{folder}/TileSliceSettings.asset";
-
-        // Try to find an existing one first
-        var guids = AssetDatabase.FindAssets("t:TileSliceSettings");
-        if (guids != null && guids.Length > 0)
+        var canonical = AssetDatabase.LoadAssetAtPath<TileSliceSettings>(CanonicalSettingsAssetPath);
+        if (canonical != null)
         {
-            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
-            settings = AssetDatabase.LoadAssetAtPath<TileSliceSettings>(path);
-            Debug.Log($"[TileSceneGenerator] Auto-assigned existing TileSliceSettings at: {path}");
+            settings = canonical;
             return;
         }
 
-        // Make sure the folder exists
-        if (!AssetDatabase.IsValidFolder("Assets/Scripts"))
-            AssetDatabase.CreateFolder("Assets", "Scripts");
-        if (!AssetDatabase.IsValidFolder("Assets/Scripts/Tiles"))
-            AssetDatabase.CreateFolder("Assets/Scripts", "Tiles");
+        var paths = FindAllSettingsAssetPaths();
+        if (paths.Length > 0)
+        {
+            string sourcePath = paths[0];
+            string moveError = AssetDatabase.MoveAsset(sourcePath, CanonicalSettingsAssetPath);
+            if (string.IsNullOrEmpty(moveError))
+            {
+                settings = AssetDatabase.LoadAssetAtPath<TileSliceSettings>(CanonicalSettingsAssetPath);
+                Debug.Log($"[TileSceneGenerator] Moved TileSliceSettings to canonical path: {CanonicalSettingsAssetPath}");
+                AssetDatabase.SaveAssets();
+                return;
+            }
 
-        // Create a new asset there
+            settings = AssetDatabase.LoadAssetAtPath<TileSliceSettings>(sourcePath);
+            Debug.LogWarning($"[TileSceneGenerator] Failed to move TileSliceSettings to canonical path ({moveError}). Using existing asset: {sourcePath}");
+            return;
+        }
+
+        // Create a new asset at canonical path.
         settings = ScriptableObject.CreateInstance<TileSliceSettings>();
-        AssetDatabase.CreateAsset(settings, defaultPath);
+        AssetDatabase.CreateAsset(settings, CanonicalSettingsAssetPath);
         AssetDatabase.SaveAssets();
-        Debug.Log($"[TileSceneGenerator] Created new TileSliceSettings at: {defaultPath}");
+        Log($"Created new TileSliceSettings at: {CanonicalSettingsAssetPath}");
     }
     
     private static IEnumerable<string> SortTerrainsByCompass(TileSliceSettings settings, string masterLabel)
@@ -2415,7 +2614,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             sb.AppendLine("[TileSceneGenerator] Clean Build Settings removed missing scenes:");
             foreach (var p in removedPaths)
                 sb.AppendLine("  • " + p);
-            Debug.Log(sb.ToString());
+            Log(sb.ToString());
 
             if (showPopup)
                 EditorUtility.DisplayDialog("Clean Build Settings",
@@ -2423,7 +2622,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
         else if (showPopup)
         {
-            Debug.Log("[TileSceneGenerator] Clean Build Settings: no missing scenes found.");
+            Log("Clean Build Settings: no missing scenes found.");
             EditorUtility.DisplayDialog("Clean Build Settings",
                 "No missing scenes found.", "OK");
         }

@@ -17,9 +17,61 @@ public static class TileIndexBuilder
     private static readonly Regex NamePattern = new(
         @"^(?<prefix>.+?)_[Tt]ile_(?<x>-?\d+)_(?<y>-?\d+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    
+    private readonly struct TileBuildSource
+    {
+        public readonly Vector2Int Coord;
+        public readonly string Path;
+        public readonly string TerrainLabel;
+        public readonly bool HasTerrain;
+        public readonly Vector3 TerrainPosition;
+        public readonly float TerrainHeight;
 
-    // Prefer the deepest path when duplicate coords exist (e.g. multiple terrain sets)
-    private static readonly bool PreferDeepestPath = true;
+        public TileBuildSource(Vector2Int coord, string path, string terrainLabel, bool hasTerrain, Vector3 terrainPosition, float terrainHeight)
+        {
+            Coord = coord;
+            Path = path;
+            TerrainLabel = terrainLabel;
+            HasTerrain = hasTerrain;
+            TerrainPosition = terrainPosition;
+            TerrainHeight = terrainHeight;
+        }
+
+        public Vector2 CandidateOriginOffset(Vector2 tileSize)
+        {
+            return new Vector2(TerrainPosition.x - Coord.x * tileSize.x, TerrainPosition.z - Coord.y * tileSize.y);
+        }
+    }
+
+    [MenuItem("Tiles/Validate TileIndex")]
+    public static void ValidateIndex()
+    {
+        var index = AssetDatabase.LoadAssetAtPath<TileIndex>(AssetPath);
+        if (index == null)
+        {
+            Debug.LogError("[TileIndexBuilder] Cannot validate TileIndex because the asset does not exist.");
+            return;
+        }
+
+        int failures = 0;
+        foreach (var record in index.Tiles)
+        {
+            if (!TileIndex.IsCenterConsistentWithOrigin(record))
+            {
+                failures++;
+                var expected = record.worldOrigin + new Vector3(record.tileSize.x * 0.5f, record.tileSize.y * 0.5f, record.tileSize.z * 0.5f);
+                Debug.LogError($"[TileIndexBuilder] Tile {record.coord} is inconsistent. center={record.worldBounds.center}, expected={expected}, origin={record.worldOrigin}, tileSize={record.tileSize}");
+            }
+        }
+
+        if (failures == 0)
+        {
+            Debug.Log($"[TileIndexBuilder] Validation passed for {index.Tiles.Count} tile record(s).");
+            return;
+        }
+
+        Debug.LogError($"[TileIndexBuilder] Validation failed with {failures} inconsistent tile record(s) out of {index.Tiles.Count}.");
+    }
 
     [MenuItem("Tiles/Rebuild TileIndex (Auto)")]
     public static void Rebuild()
@@ -82,42 +134,70 @@ public static class TileIndexBuilder
             return;
         }
 
-        // Resolve duplicates per coord
-        var chosen = new Dictionary<Vector2Int, (string path, string label)>();
-        var dups = new Dictionary<Vector2Int, List<string>>();
+        var duplicatesByCoord = candidates
+            .GroupBy(c => c.coord)
+            .Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.Select(v => v.path).OrderBy(p => p).ToList());
 
-        foreach (var g in candidates.GroupBy(c => c.coord))
+        if (duplicatesByCoord.Count > 0 && !index.NamespaceDuplicateCoordsByTerrainLabel)
         {
-            if (g.Count() == 1)
+            Debug.LogError(
+                $"[TileIndexBuilder] Found {duplicatesByCoord.Count} duplicate tile coord groups, but TileIndex.NamespaceDuplicateCoordsByTerrainLabel is disabled. " +
+                "Enable namespacing or normalize scenes to a single global coord grid before rebuilding.");
+
+            foreach (var kv in duplicatesByCoord.Take(20))
             {
-                var single = g.First();
-                chosen[g.Key] = (single.path, single.label);
+                var list = string.Join(", ", kv.Value);
+                Debug.LogError($"[TileIndexBuilder] Duplicate coord {kv.Key} from: {list}");
                 continue;
             }
 
-            var paths = g.Select(v => v.path).ToList();
-            string pick;
+            if (duplicatesByCoord.Count > 20)
+            {
+                Debug.LogError($"[TileIndexBuilder] ...and {duplicatesByCoord.Count - 20} more duplicate coord groups");
+            }
 
-            if (PreferDeepestPath)
-                pick = paths.OrderByDescending(p => p.Count(ch => ch == '/')).First(); // deeper = more specific
-            else
-                pick = paths.OrderBy(p => p).First(); // stable but shallow
+            return;
+        }
 
-            var chosenLabel = g.First(v => v.path == pick).label;
-            chosen[g.Key] = (pick, chosenLabel);
-            dups[g.Key] = paths;
+        List<(Vector2Int coord, string path, string label)> selected;
+        if (index.NamespaceDuplicateCoordsByTerrainLabel)
+        {
+            selected = candidates
+                .GroupBy(c => (c.coord, c.label), (key, group) =>
+                {
+                    var preferred = group
+                        .OrderByDescending(v => v.path.Count(ch => ch == '/'))
+                        .ThenBy(v => v.path)
+                        .First();
+                    return (key.coord, preferred.path, key.label);
+                })
+                .ToList();
+        }
+        else
+        {
+            selected = candidates
+                .GroupBy(c => c.coord, (coord, group) =>
+                {
+                    var preferred = group
+                        .OrderByDescending(v => v.path.Count(ch => ch == '/'))
+                        .ThenBy(v => v.path)
+                        .First();
+                    return (coord, preferred.path, preferred.label);
+                })
+                .ToList();
         }
 
         // Build records
-        var records = new List<TileIndex.TileRecord>(chosen.Count);
+        var records = new List<TileIndex.TileRecord>(selected.Count);
         var originOffset = Vector2.zero;
         bool originSet = false;
         
-        foreach (var kv in chosen)
+        foreach (var entry in selected)
         {
-            var coord = kv.Key;
-            var path = kv.Value.path;
-            var terrainLabel = kv.Value.label;
+            var coord = entry.coord;
+            var path = entry.path;
+            var terrainLabel = entry.label;
             
             Vector3 center;
             using (new SceneLoadScope(path))
@@ -167,6 +247,7 @@ public static class TileIndexBuilder
             records.Add(new TileIndex.TileRecord
             {
                 coord = coord,
+                terrainLabel = terrainLabel,
                 scenePath = path,
                 worldBounds = bounds,
                 worldOrigin = new Vector3(coord.x * size.x + originOffset.x, 0f, coord.y * size.y + originOffset.y),
@@ -193,20 +274,21 @@ public static class TileIndexBuilder
         AssetDatabase.Refresh();
 
         // Log summary
-        var dupCount = dups.Count;
+        var dupCount = duplicatesByCoord.Count;
         var totalScenes = guids.Length;
         Debug.Log(
             $"[TileIndexBuilder] Rebuilt TileIndex with {records.Count} tiles. " +
-            $"Scanned scenes: {totalScenes}, matched names: {candidates.Count}, skipped (name): {skippedName}, duplicate coords: {dupCount}");
+            $"Scanned scenes: {totalScenes}, matched names: {candidates.Count}, skipped (name): {skippedName}, duplicate coords: {dupCount}, " +
+            $"namespaced: {index.NamespaceDuplicateCoordsByTerrainLabel}");
 
-        if (dupCount > 0)
+        if (dupCount > 0 && index.NamespaceDuplicateCoordsByTerrainLabel)
         {
-            foreach (var kv in dups.Take(20)) // cap spam
+            foreach (var kv in duplicatesByCoord.Take(20)) // cap spam
             {
                 var list = string.Join(", ", kv.Value.Select(p => p));
-                Debug.LogWarning($"[TileIndexBuilder] Duplicate coord {kv.Key} from: {list}. Chosen: {chosen[kv.Key]}");
+                Debug.Log($"[TileIndexBuilder] Duplicate coord {kv.Key} intentionally namespaced by terrain label. Sources: {list}");
             }
-            if (dupCount > 20) Debug.LogWarning($"[TileIndexBuilder] ...and {dupCount - 20} more duplicate coord groups");
+            if (dupCount > 20) Debug.Log($"[TileIndexBuilder] ...and {dupCount - 20} more duplicate coord groups");
         }
     }
 }

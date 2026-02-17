@@ -75,13 +75,22 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
 
         EditorGUILayout.PropertyField(Find("settings"), new GUIContent("Shared Settings", "TileSliceSettings asset used to persist slicer settings and results."));
 
-        if (Find("settings").objectReferenceValue == null && GUILayout.Button(new GUIContent("Create TileSliceSettings asset", "Create a TileSliceSettings asset at Assets/TileSliceSettings.asset.")))
+        var settingsAssetPaths = generator.FindAllSettingsAssetPaths();
+        if (settingsAssetPaths.Length > 1)
         {
-            var settings = ScriptableObject.CreateInstance<TileSliceSettings>();
-            AssetDatabase.CreateAsset(settings, "Assets/TileSliceSettings.asset");
-            AssetDatabase.SaveAssets();
-            Find("settings").objectReferenceValue = settings;
-            EditorGUIUtility.PingObject(settings);
+            EditorGUILayout.HelpBox(
+                $"Multiple TileSliceSettings assets found ({settingsAssetPaths.Length}). The generator always uses the canonical asset at {TileSceneGenerator.CanonicalSettingsAssetPath}.",
+                MessageType.Warning);
+        }
+
+        if (Find("settings").objectReferenceValue == null && GUILayout.Button(new GUIContent("Create TileSliceSettings asset", $"Create a TileSliceSettings asset at {TileSceneGenerator.CanonicalSettingsAssetPath}.")))
+        {
+            generator.EnsureReadyForUi();
+            _serializedGenerator.Update();
+
+            var settingsAsset = Find("settings").objectReferenceValue;
+            if (settingsAsset != null)
+                EditorGUIUtility.PingObject(settingsAsset);
         }
 
         EditorGUILayout.Space(4);
@@ -173,6 +182,7 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
         EditorGUILayout.PropertyField(Find("nonDestructiveReslice"), new GUIContent("Non-Destructive Re-slice", "Update tile terrain data in place while preserving other scene content."));
         EditorGUILayout.PropertyField(Find("onlyUpdateIfChanged"), new GUIContent("Only Update If Changed (heights)", "Skip tiles whose heightmap is unchanged for faster reslices."));
         EditorGUILayout.PropertyField(Find("addToBuildSettings"), new GUIContent("Ensure In Build Settings", "Add generated tile scenes to Build Settings automatically."));
+        EditorGUILayout.PropertyField(Find("clearConsoleBeforeActions"), new GUIContent("Clear Console Before Actions", "Optional: clear Unity Console at action start. Disable to preserve multi-step debugging history."));
 
         if (GUILayout.Button(new GUIContent("Clean Build Settings", "Remove missing scene entries from Build Settings.")))
             generator.CleanBuildSettingsWithDialog();

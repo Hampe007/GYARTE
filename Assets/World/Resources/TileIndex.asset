@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   tileSizeMeters: {x: 250, y: 250}
   originOffsetMeters: {x: 5000, y: 0}
+  namespaceDuplicateCoordsByTerrainLabel: 1
   tiles:
   - coord: {x: 0, y: 0}
     scenePath: Assets/Tiles/Terrain_East/Scenes/Terrain_East_Tile_0_0.unity

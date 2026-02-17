@@ -5,10 +5,14 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Tiles/Tile Index", fileName = "TileIndex")]
 public class TileIndex : ScriptableObject
 {
+    
+    public const float BoundsOriginToleranceMeters = 0.01f;
+    
     [Serializable] 
     public struct TileRecord
     {
         public Vector2Int coord;
+        public string terrainLabel;
         public string scenePath;
         public Bounds worldBounds;
         public Vector3 worldOrigin;
@@ -19,15 +23,16 @@ public class TileIndex : ScriptableObject
 
     [SerializeField] private Vector2 tileSizeMeters = new(250f, 250f);
     [SerializeField] private Vector2 originOffsetMeters = Vector2.zero;
+    [SerializeField] private bool namespaceDuplicateCoordsByTerrainLabel;
     
     [SerializeField] private List<TileRecord> tiles = new();
 
-    private readonly Dictionary<Vector2Int, TileRecord> coordLookup = new();
+    private readonly Dictionary<Vector2Int, List<TileRecord>> coordLookup = new();
     private readonly Dictionary<string, TileRecord> pathLookup = new();
 
     public Vector2 TileSizeMeters => tileSizeMeters;
     public Vector2 OriginOffsetMeters => originOffsetMeters;
-    
+    public bool NamespaceDuplicateCoordsByTerrainLabel => namespaceDuplicateCoordsByTerrainLabel;
     public IReadOnlyList<TileRecord> Tiles => tiles;
 
     private void OnEnable()
@@ -52,14 +57,13 @@ public class TileIndex : ScriptableObject
                 continue;
             }
 
-            if (!coordLookup.ContainsKey(record.coord))
+            if (!coordLookup.TryGetValue(record.coord, out var recordsForCoord))
             {
-                coordLookup.Add(record.coord, record);
+                recordsForCoord = new List<TileRecord>();
+                coordLookup.Add(record.coord, recordsForCoord);
             }
-            else
-            {
-                coordLookup[record.coord] = record;
-            }
+            
+            recordsForCoord.Add(record);
 
             if (!pathLookup.ContainsKey(record.scenePath))
             {
@@ -83,7 +87,32 @@ public class TileIndex : ScriptableObject
 
     public bool TryGetByCoord(Vector2Int coord, out TileRecord record)
     {
-        return coordLookup.TryGetValue(coord, out record);
+        if (coordLookup.TryGetValue(coord, out var records) && records.Count > 0)
+        {
+            record = records[0];
+            return true;
+        }
+
+        record = default;
+        return false;
+    }
+
+    public bool TryGetByCoordAndTerrain(Vector2Int coord, string terrainLabel, out TileRecord record)
+    {
+        if (coordLookup.TryGetValue(coord, out var records))
+        {
+            foreach (var candidate in records)
+            {
+                if (string.Equals(candidate.terrainLabel, terrainLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    record = candidate;
+                    return true;
+                }
+            }
+        }
+
+        record = default;
+        return false;
     }
 
     public bool TryGetByScene(string path, out TileRecord record)
@@ -122,9 +151,12 @@ public class TileIndex : ScriptableObject
             for (int dy = -radius; dy <= radius; ++dy)
             {
                 var coord = new Vector2Int(center.x + dx, center.y + dy);
-                if (coordLookup.TryGetValue(coord, out var record))
+                if (coordLookup.TryGetValue(coord, out var records))
                 {
-                    yield return record.scenePath;
+                    foreach (var record in records)
+                    {
+                        yield return record.scenePath;
+                    }
                 }
             }
         }
@@ -145,6 +177,17 @@ public class TileIndex : ScriptableObject
     public void SetTileSizeMeters(Vector2 newTileSize)
     {
         tileSizeMeters = newTileSize;
+    }
+    
+    public void SetNamespaceDuplicateCoordsByTerrainLabel(bool enabled)
+    {
+        namespaceDuplicateCoordsByTerrainLabel = enabled;
+    }
+    
+    public static bool IsCenterConsistentWithOrigin(in TileRecord record, float tolerance = BoundsOriginToleranceMeters)
+    {
+        var expectedCenter = record.worldOrigin + new Vector3(record.tileSize.x * 0.5f, record.tileSize.y * 0.5f, record.tileSize.z * 0.5f);
+        return Vector3.Distance(record.worldBounds.center, expectedCenter) <= Mathf.Max(0f, tolerance);
     }
 #endif
 }
