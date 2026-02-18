@@ -15,6 +15,7 @@ using System.Text;
 public sealed class TileSceneGenerator : ScriptableObject
 {
     public const string CanonicalSettingsAssetPath = "Assets/TileSliceSettings.asset";
+    public const string CanonicalGridMetadataAssetPath = TileGridMetadataProvider.CanonicalAssetPath;
     
     // UI / runtime guard
     private bool _isRunning;
@@ -974,6 +975,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 Log(_terrainLog.ToString());
             }
             WriteMergedTileIndex(allTileIndexRecords, expectedTileCount, sharedTileSize2D, sharedOriginOffset);
+            UpdateGridMetadataAsset(sharedTileSize2D, sharedOriginOffset);
         }
         finally
         {
@@ -1198,7 +1200,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         foreach (var t in terrains)
         {
             if (!t || !t.terrainData) continue;
-            string safe = Regex.Replace(t.name, @"[^A-Za-z0-9_\-]", "_");
+            string safe = TileTerrainLabelUtility.ToLabel(t.name);
             list.Add(new TerrainSnapshot
             {
                 label  = safe,
@@ -2550,6 +2552,111 @@ public sealed class TileSceneGenerator : ScriptableObject
         Log($"Created new TileSliceSettings at: {CanonicalSettingsAssetPath}");
     }
     
+    private void UpdateGridMetadataAsset(Vector2? sharedTileSize2D, Vector2? sharedOriginOffset)
+    {
+        if (settings == null)
+            return;
+
+        var metadata = EnsureGridMetadataAsset();
+        if (metadata == null)
+            return;
+
+        var validLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var result in settings.lastResults)
+        {
+            if (result == null || string.IsNullOrWhiteSpace(result.label))
+                continue;
+
+            validLabels.Add(result.label);
+            metadata.UpsertTerrain(
+                result.label,
+                result.origin,
+                result.size,
+                result.tilesX,
+                result.tilesY,
+                result.tileSizeX,
+                result.tileSizeY
+            );
+        }
+
+        metadata.RemoveMissingTerrains(validLabels);
+
+        Vector2Int globalDimensions = ComputeGlobalGridDimensions(settings.lastResults);
+        Vector2 resolvedTileSize = sharedTileSize2D ?? metadata.TileSizeXZ;
+        Vector3 resolvedOrigin = sharedOriginOffset.HasValue
+            ? new Vector3(sharedOriginOffset.Value.x, 0f, sharedOriginOffset.Value.y)
+            : metadata.GridOriginWorld;
+
+        metadata.SetGlobal(
+            settings.tileIndex,
+            resolvedOrigin,
+            resolvedTileSize,
+            globalDimensions,
+            TileGridMetadata.CoordinateSystemDefinition.WorldXZ_FloorToInt_PositiveXEast_PositiveZNorth
+        );
+
+        EditorUtility.SetDirty(metadata);
+    }
+
+    private static Vector2Int ComputeGlobalGridDimensions(List<TileSliceSettings.PerTerrain> results)
+    {
+        if (results == null || results.Count == 0)
+            return Vector2Int.one;
+
+        int maxX = 1;
+        int maxY = 1;
+
+        foreach (var result in results)
+        {
+            if (result == null)
+                continue;
+
+            maxX = Mathf.Max(maxX, result.tilesX);
+            maxY = Mathf.Max(maxY, result.tilesY);
+        }
+
+        return new Vector2Int(maxX, maxY);
+    }
+
+    private static TileGridMetadata EnsureGridMetadataAsset()
+    {
+        var canonical = AssetDatabase.LoadAssetAtPath<TileGridMetadata>(CanonicalGridMetadataAssetPath);
+        if (canonical != null)
+            return canonical;
+
+        EnsureFolderHierarchy(Path.GetDirectoryName(CanonicalGridMetadataAssetPath));
+
+        var metadata = ScriptableObject.CreateInstance<TileGridMetadata>();
+        AssetDatabase.CreateAsset(metadata, CanonicalGridMetadataAssetPath);
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[TileSceneGenerator] Created TileGridMetadata at: {CanonicalGridMetadataAssetPath}");
+        return metadata;
+    }
+
+    private static void EnsureFolderHierarchy(string assetFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(assetFolderPath) || assetFolderPath == "Assets")
+            return;
+
+        string normalized = NormalizeAssetPath(assetFolderPath);
+        if (AssetDatabase.IsValidFolder(normalized))
+            return;
+
+        string[] parts = normalized.Split('/');
+        string current = parts[0];
+        for (int i = 1; i < parts.Length; i++)
+        {
+            string next = $"{current}/{parts[i]}";
+            if (!AssetDatabase.IsValidFolder(next))
+            {
+                AssetDatabase.CreateFolder(current, parts[i]);
+            }
+
+            current = next;
+        }
+    }
+
     private static IEnumerable<string> SortTerrainsByCompass(TileSliceSettings settings, string masterLabel)
     {
         if (settings == null) yield break;

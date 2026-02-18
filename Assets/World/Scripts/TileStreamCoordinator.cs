@@ -12,6 +12,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 {
     [Header("Configuration")]
     public TileIndex index;
+    [SerializeField] private TileGridMetadata gridMetadata;
     [SerializeField] private Transform player;
     [SerializeField] public float loadRadius = 500f;
     [SerializeField] private float edgeBuffer = 25f;
@@ -112,6 +113,7 @@ public class TileStreamCoordinator : NetworkBehaviour
             return;
         }
 
+        ResolveGridMetadataAndIndex();
         streamer = new TileStreamer(index);
         loader = new TileLoader(this, liveTiles);
 
@@ -124,8 +126,25 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void OnValidate()
     {
+        ResolveGridMetadataAndIndex();
         UpdateRadiusCache();
     }
+
+    public TileGridMetadata GridMetadata => gridMetadata;
+
+    private void ResolveGridMetadataAndIndex()
+    {
+        if (gridMetadata == null)
+        {
+            gridMetadata = TileGridMetadataProvider.GetOrLoad();
+        }
+
+        if (index == null && gridMetadata != null)
+        {
+            index = gridMetadata.TileIndex;
+        }
+    }
+
 
     public bool BuildStreamingDisabled => disableInPlayerBuilds && !Application.isEditor;
     public bool RuntimeStreamingDisabled => disableAtRuntime;
