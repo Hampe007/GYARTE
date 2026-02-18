@@ -59,9 +59,9 @@ public sealed class TileSceneGenerator : ScriptableObject
     [SerializeField] private int maxTilesPerTerrain = 4096;
 
     // Output
-    [SerializeField] private string sceneNamePattern = "{t}_Tile_{x}_{y}";
+    [SerializeField] private string sceneNamePattern = "{t}_{tile}";
     [SerializeField] private string outputFolder = "Assets/Tiles";
-    [SerializeField] private string terrainDataPrefix = "TD_"; // saved as TD_<t>_<x>_<y>.asset
+    [SerializeField] private string terrainDataPrefix = "TD_"; // saved as TD_<t>_<tileRef>.asset (example: TD_Terrain_East_A1.asset)
     [SerializeField] private bool subfolderPerTerrain = true;
 
     private string _outputScenesFolder;
@@ -259,7 +259,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     }
 
     private const string LegacyTilesScenesRoot = "Assets/Level/Scenes/Tiles";
-    private const string TileSceneNameRegex = ".*Tile.*";
     
     #region Generated Output Cleanup
     private readonly struct GeneratedOutputPaths
@@ -391,6 +390,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     private string[] DiscoverAdditionalSceneFolders(GeneratedOutputPaths paths)
     {
         var discovered = new HashSet<string>(StringComparer.Ordinal);
+        string sceneNameRegex = BuildSceneNameRegex(sceneNamePattern);
 
         foreach (string seed in paths.SearchSeeds)
         {
@@ -406,7 +406,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
                 string sceneName = Path.GetFileNameWithoutExtension(assetPath);
 
-                if (!Regex.IsMatch(sceneName, TileSceneNameRegex, RegexOptions.IgnoreCase))
+                if (!Regex.IsMatch(sceneName, sceneNameRegex, RegexOptions.IgnoreCase))
                     continue;
 
                 string parentFolder = NormalizeAssetPath(Path.GetDirectoryName(assetPath));
@@ -426,11 +426,11 @@ public sealed class TileSceneGenerator : ScriptableObject
     {
         string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
 
-        // Matches: TD_Terrain_<anything>_<x>_<y>
-        string tdRegex = $"^{escapedPrefix}Terrain_.+_\\d+_\\d+$";
+        // Matches: TD_Terrain_<anything>_<tileRef> (example: TD_Terrain_East_A1)
+        string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
 
-        // Matches: Props_<anything>_<x>_<y>
-        string propRegex = "^Props_.+_\\d+_\\d+$";
+        // Matches: Props_<anything>_<tileRef> (example: Props_Terrain_East_A1)
+        string propRegex = "^Props_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
 
         var discovered = new HashSet<string>(StringComparer.Ordinal);
 
@@ -481,11 +481,12 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private static string BuildSceneNameRegex(string pattern)
     {
-        string source = string.IsNullOrWhiteSpace(pattern) ? "{t}_Tile_{x}_{y}" : pattern;
+        string source = NormalizeLegacySceneNamePattern(pattern);
         string escaped = Regex.Escape(source)
             .Replace("\\{t\\}", ".+")
             .Replace("\\{x\\}", "\\d+")
-            .Replace("\\{y\\}", "\\d+");
+            .Replace("\\{y\\}", "\\d+")
+            .Replace("\\{tile\\}", "(?:[A-Za-z]+\\d+|\\d+_\\d+)");
         return "^" + escaped + "$";
     }
 
@@ -535,6 +536,8 @@ public sealed class TileSceneGenerator : ScriptableObject
         // Try to reveal the first valid folder that has content we care about.
         string revealTarget = null;
 
+        string sceneNameRegex = BuildSceneNameRegex(sceneNamePattern);
+
         foreach (string folder in candidateFolders.Where(AssetDatabase.IsValidFolder))
         {
             bool hasTileScene = AssetDatabase.FindAssets("t:Scene", new[] { folder })
@@ -543,7 +546,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 {
                     string name = Path.GetFileNameWithoutExtension(p);
                     return !string.IsNullOrWhiteSpace(name) &&
-                           Regex.IsMatch(name, TileSceneNameRegex, RegexOptions.IgnoreCase);
+                           Regex.IsMatch(name, sceneNameRegex, RegexOptions.IgnoreCase);
                 });
 
             if (hasTileScene)
@@ -561,7 +564,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                         return false;
 
                     string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
-                    string tdRegex = $"^{escapedPrefix}Terrain_.+_\\d+_\\d+$";
+                    string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
                     return Regex.IsMatch(name, tdRegex, RegexOptions.IgnoreCase);
                 });
 
@@ -1035,6 +1038,27 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
     }
     
+    private static bool TryParseTileCoordSuffix(string name, out int x, out int y)
+    {
+        x = y = 0;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        var parts = name.Split('_');
+        if (parts.Length < 2)
+            return false;
+
+        if (int.TryParse(parts[^2], out x) && int.TryParse(parts[^1], out y))
+            return true;
+
+        return TileDisplayNameUtility.TryParseTileReference(parts[^1], out x, out y);
+    }
+
+    private static bool IsCoordOutOfRange(int x, int y, int tilesX, int tilesY)
+    {
+        return x < 0 || y < 0 || x >= tilesX || y >= tilesY;
+    }
+
     private void DeleteOldTileScenes(string scenesFolder, string terrainLabel, int tilesX, int tilesY)
     {
         if (!Directory.Exists(scenesFolder))
@@ -1047,23 +1071,14 @@ public sealed class TileSceneGenerator : ScriptableObject
             string name = Path.GetFileNameWithoutExtension(file);
 
             // Accept both patterns:
-            // {t}_Tile_{x}_{y} or custom but with tokens filled
+            // {t}_{tile} (preferred) or legacy/custom token formats
             if (!name.Contains(terrainLabel)) 
                 continue;
 
-            // Try extract tile coords from the end of name
-            var parts = name.Split('_');
-            if (parts.Length < 2) 
-                continue;
-
-            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            if (TryParseTileCoordSuffix(name, out int x, out int y) && IsCoordOutOfRange(x, y, tilesX, tilesY))
             {
-                // Out of range → delete scene
-                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
-                {
-                    Log($"Deleting old tile scene: {file}");
-                    AssetDatabase.DeleteAsset(file);
-                }
+                Log($"Deleting old tile scene: {file} ({TileDisplayNameUtility.FormatTileReference(x, y)})");
+                AssetDatabase.DeleteAsset(file);
             }
         }
     }
@@ -1083,18 +1098,10 @@ public sealed class TileSceneGenerator : ScriptableObject
             if (!name.StartsWith(prefix + terrainLabel + "_", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            // Extract last two underscores: _x_y
-            var parts = name.Split('_');
-            if (parts.Length < 3)
-                continue;
-
-            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            if (TryParseTileCoordSuffix(name, out int x, out int y) && IsCoordOutOfRange(x, y, tilesX, tilesY))
             {
-                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
-                {
-                    Log($"Deleting old TerrainData: {file}");
-                    AssetDatabase.DeleteAsset(file);
-                }
+                Log($"Deleting old TerrainData: {file} ({TileDisplayNameUtility.FormatTileReference(x, y)})");
+                AssetDatabase.DeleteAsset(file);
             }
         }
     }
@@ -1113,17 +1120,10 @@ public sealed class TileSceneGenerator : ScriptableObject
             if (!name.StartsWith("Props_" + terrainLabel + "_", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var parts = name.Split('_');
-            if (parts.Length < 4)
-                continue;
-
-            if (int.TryParse(parts[^2], out int x) && int.TryParse(parts[^1], out int y))
+            if (TryParseTileCoordSuffix(name, out int x, out int y) && IsCoordOutOfRange(x, y, tilesX, tilesY))
             {
-                if (x < 0 || y < 0 || x >= tilesX || y >= tilesY)
-                {
-                    Log($"Deleting old PropTileData: {file}");
-                    AssetDatabase.DeleteAsset(file);
-                }
+                Log($"Deleting old PropTileData: {file} ({TileDisplayNameUtility.FormatTileReference(x, y)})");
+                AssetDatabase.DeleteAsset(file);
             }
         }
     }
@@ -1154,11 +1154,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (!name.Contains(terrainLabel, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var parts = name.Split('_');
-        if (parts.Length < 2)
-            return false;
-
-        return int.TryParse(parts[^2], out _) && int.TryParse(parts[^1], out _);
+        return TryParseTileCoordSuffix(name, out _, out _);
     }
 
     private static void RemoveOldBuildSettingsEntries(string terrainLabel, HashSet<string> currentGeneratedSceneManifest)
@@ -1588,14 +1584,14 @@ public sealed class TileSceneGenerator : ScriptableObject
     {
         if (_srcTD == null) throw new InvalidOperationException("Current Terrain has no TerrainData.");
         if (tilesX < 1 || tilesY < 1) throw new ArgumentOutOfRangeException(nameof(tilesX), "tilesX/tilesY must be ≥ 1.");
-        if (string.IsNullOrWhiteSpace(sceneNamePattern) || !sceneNamePattern.Contains("{x}") || !sceneNamePattern.Contains("{y}"))
-            throw new InvalidOperationException("Scene Name Pattern must include {x} and {y}. You can also use {t} for terrain name.");
+        if (string.IsNullOrWhiteSpace(sceneNamePattern) || (!sceneNamePattern.Contains("{tile}") && (!sceneNamePattern.Contains("{x}") || !sceneNamePattern.Contains("{y}"))))
+            throw new InvalidOperationException("Scene Name Pattern must include either {tile}, or both {x} and {y}. You can also use {t} for terrain name.");
         if (string.IsNullOrWhiteSpace(effectiveOutputFolder) || !effectiveOutputFolder.StartsWith("Assets", StringComparison.Ordinal))
             throw new InvalidOperationException("Output folder must be under Assets/.");
         if (!IsSafeAssetFolderPath(effectiveOutputFolder))
             throw new InvalidOperationException($"Output folder path is invalid: '{effectiveOutputFolder}'. Use a valid Assets/... path without invalid characters.");
 
-        string sampleTileSceneName = ReplaceTokens(sceneNamePattern, 0, 0);
+        string sampleTileSceneName = ReplaceTokens(NormalizeLegacySceneNamePattern(sceneNamePattern), 0, 0);
         if (string.IsNullOrWhiteSpace(sampleTileSceneName)
             || sampleTileSceneName.Contains('/')
             || sampleTileSceneName.Contains('\\')
@@ -1666,7 +1662,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private string GetPropAssetPath(int tx, int ty)
     {
-        return $"{_outputPropsFolder}/Props_{_currentTerrainLabel}_{tx}_{ty}.asset";
+        return $"{_outputPropsFolder}/Props_{TileDisplayNameUtility.FormatTerrainTileLabel(_currentTerrainLabel, tx, ty)}.asset";
     }
     
     #region PropTileData Saving
@@ -1817,7 +1813,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 {
                     float progress = processed / (float)total;
                     EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]",
-                        $"Processing tile {tx},{ty}", progress);
+                        $"Processing tile {TileDisplayNameUtility.FormatTileReference(tx, ty)}", progress);
                     
                     EnsureOutputWriteFolders();
 
@@ -1828,7 +1824,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                     );
 
                     // Save TerrainData under DATA folder
-                    string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{_currentTerrainLabel}_{tx}_{ty}.asset";
+                    string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{TileDisplayNameUtility.FormatTerrainTileLabel(_currentTerrainLabel, tx, ty)}.asset";
                     var existingTD = AssetDatabase.LoadAssetAtPath<TerrainData>(tdPath);
 
                     bool heightsChanged = false, alphaChanged = false, detailsChanged = false, treesChanged = false;
@@ -1936,7 +1932,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                         newScene.name = tileSceneName;
 
                         var terrainGO = Terrain.CreateTerrainGameObject(newTD);
-                        terrainGO.name = $"Terrain_{tx}_{ty}";
+                        terrainGO.name = $"Terrain_{TileDisplayNameUtility.FormatTileReference(tx, ty)}";
                         PositionTerrainGO(terrainGO.transform, tx, ty, tileSize, cachedOrigin);
 
                         var col = terrainGO.GetComponent<TerrainCollider>();
@@ -2295,8 +2291,11 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private static GameObject FindOrCreateTerrainGO(int tx, int ty, TerrainData td, Vector3 tileSize, Vector3 srcPos, Scene scene)
     {
-        string expectedName = $"Terrain_{tx}_{ty}";
-        GameObject terrainGO = scene.GetRootGameObjects().FirstOrDefault(go => go.name == expectedName);
+        string expectedName = $"Terrain_{TileDisplayNameUtility.FormatTileReference(tx, ty)}";
+        string legacyName = $"Terrain_{tx}_{ty}";
+        GameObject terrainGO = scene.GetRootGameObjects().FirstOrDefault(go =>
+            go.name == expectedName ||
+            go.name == legacyName);
 
         if (terrainGO == null)
         {
@@ -2321,6 +2320,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             col.enabled = true;
         }
 
+        terrainGO.name = expectedName;
         PositionTerrainGO(terrainGO.transform, tx, ty, tileSize, srcPos);
         return terrainGO;
     }
@@ -2510,9 +2510,23 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
     }
 
+    private static string NormalizeLegacySceneNamePattern(string pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return "{t}_{tile}";
+
+        return pattern
+            .Replace("_Tile_{x}_{y}", "_{tile}", StringComparison.OrdinalIgnoreCase)
+            .Replace("_{x}_{y}", "_{tile}", StringComparison.Ordinal);
+    }
+
     private string ReplaceTokens(string pattern, int tx, int ty)
     {
-        return pattern
+        string normalizedPattern = NormalizeLegacySceneNamePattern(pattern);
+        string tileRef = TileDisplayNameUtility.FormatTileReference(tx, ty);
+
+        return normalizedPattern
+            .Replace("{tile}", tileRef)
             .Replace("{x}", tx.ToString())
             .Replace("{y}", ty.ToString())
             .Replace("{t}", _currentTerrainLabel);
