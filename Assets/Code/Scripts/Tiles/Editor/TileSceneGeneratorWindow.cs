@@ -47,7 +47,7 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
     {
         DrawSectionHeader("Output Folder Settings","Controls where generated tile scenes, TerrainData assets, and derived content are written under the Assets folder.");
         
-        EditorGUILayout.PropertyField(Find("sceneNamePattern"), new GUIContent("Scene Name Pattern", "Naming pattern for generated scenes. Tokens: {t} terrain name, {x} column, {y} row."));
+        EditorGUILayout.PropertyField(Find("sceneNamePattern"), new GUIContent("Scene Name Pattern", "Naming pattern for generated scenes. Tokens: {t} terrain name, {tile} map tile ref (A1, B3), or legacy {x}/{y} numeric coords."));
         EditorGUILayout.PropertyField(Find("outputFolder"), new GUIContent("Output Root Folder", "Root folder under Assets where generated tile output will be saved."));
         EditorGUILayout.PropertyField(Find("terrainDataPrefix"), new GUIContent("TerrainData Prefix", "Prefix used when generating TerrainData assets per tile."));
         EditorGUILayout.PropertyField(Find("subfolderPerTerrain"), new GUIContent("Subfolder Per Terrain", "When enabled, each terrain writes into its own output subfolder."));
