@@ -1,6 +1,6 @@
 // Assets/Scripts/Tiles/TileGridGizmo.cs
 // Draws tile bounds as gizmos for one or more terrains.
-// Works in edit mode; uses the same "tileSizeMeters" approach as the slicer.
+// Reads authoritative grid metadata written by the slicer.
 
 using System;
 using System.Linq;
@@ -18,151 +18,98 @@ public sealed class TileGridGizmo : MonoBehaviour
     public Terrain[] manualTerrains;
 
     [Header("Grid")]
-    public TileSliceSettings settings;
-    [Min(1f)] public float tileSizeMeters = 250f;
+    [Tooltip("Optional explicit metadata reference. If empty, the canonical metadata asset is auto-loaded.")]
+    public TileGridMetadata metadata;
     [Tooltip("Offset the boxes to match each terrain's origin (recommended: leave at 0,0,0).")]
     public Vector3 worldOffset = Vector3.zero;
 
     [Header("Gizmo Style")]
     public Color lineColor = new Color(0f, 1f, 1f, 0.85f);
-    public Color labelColor = new Color(1f, 1f, 1f, 0.9f);
-    public bool drawLabels = false;
-    public bool drawAlways = true;     // if false → only when this object is selected
-    public bool solidFill = false;     // off by default (wireframe only)
-    [Range(0.05f, 1.0f)] public float heightRatio = 0.05f; // visual box height vs terrain.height
+    public bool drawAlways = true; // if false → only when this object is selected
 
     // Global toggle controlled by menu item
     public static bool ShowGizmos = true;
 
-    void OnDrawGizmos()
+    private void OnDrawGizmos()
     {
         if (!drawAlways) return;
         Draw();
     }
 
-    void OnDrawGizmosSelected()
+    private void OnDrawGizmosSelected()
     {
         if (drawAlways) return;
         Draw();
     }
 
-    void Draw()
+    private void Draw()
     {
         if (!ShowGizmos) return;
-        if (tileSizeMeters <= 0f) return;
 
-        var terrains = GetTerrains();
+        List<Terrain> terrains = GetTerrains();
         if (terrains.Count == 0) return;
 
-        var oldColor = Gizmos.color;
+        TileGridMetadata gridMetadata = metadata != null ? metadata : TileGridMetadataProvider.GetOrLoad();
+        if (gridMetadata == null) return;
+
+        Color oldColor = Gizmos.color;
         Gizmos.color = lineColor;
 
-#if UNITY_EDITOR
-        var oldHc = UnityEditor.Handles.color;
-        UnityEditor.Handles.color = labelColor;
-#endif
-
-        foreach (var t in terrains)
+        foreach (Terrain terrain in terrains)
         {
-            if (t == null || t.terrainData == null) continue;
+            if (terrain == null || terrain.terrainData == null) continue;
 
-            var td = t.terrainData;
-            Vector3 size = td.size;
-            string label = System.Text.RegularExpressions.Regex.Replace(t.name, @"[^A-Za-z0-9_\-]", "_");
-            Vector3 origin = t.transform.position;
+            string label = TileTerrainLabelUtility.ToLabel(terrain.name);
+            if (!gridMetadata.TryGetTerrain(label, out TileGridMetadata.TerrainGridRecord record))
+                continue;
 
-            int tilesX, tilesY;
-            float tileSizeX, tileSizeY;
+            int tilesX = record.gridDimensions.x;
+            int tilesY = record.gridDimensions.y;
+            float tileSizeX = record.tileSizeXZ.x;
+            float tileSizeY = record.tileSizeXZ.y;
 
-            if (settings != null && settings.TryGet(label, out var res))
-            {
-                tilesX = res.tilesX;
-                tilesY = res.tilesY;
-                tileSizeX = res.tileSizeX;
-                tileSizeY = res.tileSizeY;
-                origin = res.origin;
-            }
-            else
-            {
-                float desired = tileSizeMeters;
-                bool evenFit = true;
-                bool square = true;
+            if (tilesX <= 0 || tilesY <= 0 || tileSizeX <= 0f || tileSizeY <= 0f)
+                continue;
 
-                if (!evenFit)
-                {
-                    tilesX = Mathf.Max(1, Mathf.CeilToInt(size.x / desired));
-                    tilesY = Mathf.Max(1, Mathf.CeilToInt(size.z / desired));
-                }
-                else
-                {
-                    tilesX = Mathf.Max(1, Mathf.RoundToInt(size.x / desired));
-                    tilesY = Mathf.Max(1, Mathf.RoundToInt(size.z / desired));
-                    if (square)
-                    {
-                        float fitX = size.x / tilesX;
-                        float fitY = size.z / tilesY;
-                        float s = Mathf.Min(fitX, fitY);
-                        tilesX = Mathf.Max(1, Mathf.RoundToInt(size.x / s));
-                        tilesY = Mathf.Max(1, Mathf.RoundToInt(size.z / s));
-                    }
-                }
-
-                tileSizeX = size.x / tilesX;
-                tileSizeY = size.z / tilesY;
-            }
-
-            Vector3 drawOrigin = origin + worldOffset;
-            var tileSize = new Vector3(tileSizeX, size.y, tileSizeY);
-            float gizmoHeight = Mathf.Max(1f, size.y * heightRatio);
+            Vector3 drawOrigin = record.origin + worldOffset;
+            float height = Mathf.Max(1f, terrain.terrainData.size.y * 0.05f);
 
             for (int y = 0; y < tilesY; y++)
             {
                 for (int x = 0; x < tilesX; x++)
                 {
-                    var min = new Vector3(
-                        drawOrigin.x + x * tileSize.x,
+                    Vector3 min = new Vector3(
+                        drawOrigin.x + x * tileSizeX,
                         drawOrigin.y,
-                        drawOrigin.z + y * tileSize.z
+                        drawOrigin.z + y * tileSizeY
                     );
 
-                    var center = new Vector3(
-                        min.x + tileSize.x * 0.5f,
-                        drawOrigin.y + gizmoHeight * 0.5f,
-                        min.z + tileSize.z * 0.5f
+                    Vector3 center = new Vector3(
+                        min.x + tileSizeX * 0.5f,
+                        drawOrigin.y + height * 0.5f,
+                        min.z + tileSizeY * 0.5f
                     );
 
-                    var box = new Vector3(tileSize.x, gizmoHeight, tileSize.z);
-
-                    if (solidFill)
-                        Gizmos.DrawCube(center, box);
+                    Vector3 box = new Vector3(tileSizeX, height, tileSizeY);
                     Gizmos.DrawWireCube(center, box);
-
-#if UNITY_EDITOR
-                    if (drawLabels)
-                    {
-                        var labelPos = new Vector3(center.x, center.y + gizmoHeight * 0.55f, center.z);
-                        UnityEditor.Handles.Label(labelPos, $"{t.name}  [{x},{y}]");
-                    }
-#endif
                 }
             }
         }
 
         Gizmos.color = oldColor;
-#if UNITY_EDITOR
-        UnityEditor.Handles.color = oldHc;
-#endif
     }
 
-    List<Terrain> GetTerrains()
+    private List<Terrain> GetTerrains()
     {
         if (autoCollect)
         {
-            var all = Terrain.activeTerrains ?? Array.Empty<Terrain>();
+            Terrain[] all = Terrain.activeTerrains ?? Array.Empty<Terrain>();
             if (string.IsNullOrEmpty(autoPrefix)) return all.ToList();
             return all.Where(tt => tt && tt.name.StartsWith(autoPrefix, StringComparison.OrdinalIgnoreCase))
-                      .OrderBy(tt => tt.name).ToList();
+                .OrderBy(tt => tt.name)
+                .ToList();
         }
+
         return (manualTerrains ?? Array.Empty<Terrain>()).Where(tt => tt).Distinct().ToList();
     }
 }
