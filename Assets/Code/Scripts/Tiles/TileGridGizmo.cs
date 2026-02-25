@@ -78,9 +78,7 @@ public sealed class TileGridGizmo : MonoBehaviour
         if (cachedCoordinator != null)
             return cachedCoordinator;
 
-#if UNITY_2023_1_OR_NEWER
-        cachedCoordinator = Object.FindFirstObjectByType<TileStreamCoordinator>(FindObjectsInactive.Include);
-#else
+#if UNITY_EDITOR
         cachedCoordinator = FindObjectOfType<TileStreamCoordinator>(true);
 #endif
         return cachedCoordinator;

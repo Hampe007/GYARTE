@@ -1,0 +1,65 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f35d214543b0614d8efa6e10887f89a, type: 3}
+  m_Name: TileGridMetadata
+  m_EditorClassIdentifier: 
+  tileIndex: {fileID: 0}
+  gridOriginWorld: {x: 5000, y: 0, z: 0}
+  tileSizeXZ: {x: 256, y: 312.5}
+  gridDimensions: {x: 16, y: 16}
+  coordinateSystem: 0
+  terrains:
+  - label: Terrain_Master
+    origin: {x: 0, y: -2, z: 0}
+    tileSizeXZ: {x: 312.5, y: 312.5}
+    gridDimensions: {x: 16, y: 16}
+    terrainSize: {x: 5000, y: 1000, z: 5000}
+  - label: Terrain_North
+    origin: {x: 0, y: -2, z: 5000}
+    tileSizeXZ: {x: 312.5, y: 256}
+    gridDimensions: {x: 16, y: 1}
+    terrainSize: {x: 5000, y: 1000, z: 256}
+  - label: Terrain_East
+    origin: {x: 5000, y: -2, z: 0}
+    tileSizeXZ: {x: 256, y: 312.5}
+    gridDimensions: {x: 1, y: 16}
+    terrainSize: {x: 256, y: 1000, z: 5000}
+  - label: Terrain_South
+    origin: {x: 0, y: -2, z: -255.99997}
+    tileSizeXZ: {x: 312.5, y: 256}
+    gridDimensions: {x: 16, y: 1}
+    terrainSize: {x: 5000, y: 1000, z: 256}
+  - label: Terrain_West
+    origin: {x: -256, y: -2, z: 0}
+    tileSizeXZ: {x: 256, y: 312.5}
+    gridDimensions: {x: 1, y: 16}
+    terrainSize: {x: 256, y: 1000, z: 5000}
+  - label: Terrain_NorthEast
+    origin: {x: 5000, y: -2, z: 5000}
+    tileSizeXZ: {x: 256, y: 256}
+    gridDimensions: {x: 1, y: 1}
+    terrainSize: {x: 256, y: 1000, z: 256}
+  - label: Terrain_NorthWest
+    origin: {x: -256, y: -2, z: 5000}
+    tileSizeXZ: {x: 256, y: 256}
+    gridDimensions: {x: 1, y: 1}
+    terrainSize: {x: 256, y: 1000, z: 256}
+  - label: Terrain_SouthEast
+    origin: {x: 5000, y: -2, z: -255.99997}
+    tileSizeXZ: {x: 256, y: 256}
+    gridDimensions: {x: 1, y: 1}
+    terrainSize: {x: 256, y: 1000, z: 256}
+  - label: Terrain_SouthWest
+    origin: {x: -256, y: -2, z: -255.99997}
+    tileSizeXZ: {x: 256, y: 256}
+    gridDimensions: {x: 1, y: 1}
+    terrainSize: {x: 256, y: 1000, z: 256}

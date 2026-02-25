@@ -26,7 +26,7 @@ MonoBehaviour:
   forceSquareTiles: 1
   maxTilesPerAxis: 128
   maxTilesPerTerrain: 4096
-  sceneNamePattern: '{t}_Tile_{x}_{y}'
+  sceneNamePattern: '{t}_{tile}'
   outputFolder: Assets/Tiles
   terrainDataPrefix: TD_
   subfolderPerTerrain: 1
@@ -34,7 +34,7 @@ MonoBehaviour:
   copyAlphamaps: 0
   copyDetails: 0
   copyTrees: 0
-  copyProps: 1
+  copyProps: 0
   nonDestructiveReslice: 0
   onlyUpdateIfChanged: 0
   addToBuildSettings: 1

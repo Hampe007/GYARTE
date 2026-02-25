@@ -82,8 +82,6 @@ public sealed class TileSceneGenerator : ScriptableObject
     [SerializeField] private bool addToBuildSettings = true;
     [SerializeField] private bool clearConsoleBeforeActions;
 
-    
-    
     // Snapshot type (do NOT hold Terrain refs while running)
     private sealed class TerrainSnapshot
     {
@@ -427,10 +425,10 @@ public sealed class TileSceneGenerator : ScriptableObject
         string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
 
         // Matches: TD_Terrain_<anything>_<tileRef> (example: TD_Terrain_East_A1)
-        string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
+        string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\\d+|\\d+_\\d+)$";
 
         // Matches: Props_<anything>_<tileRef> (example: Props_Terrain_East_A1)
-        string propRegex = "^Props_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
+        string propRegex = "^Props_.+_(?:[A-Za-z]+\\d+|\\d+_\\d+)$";
 
         var discovered = new HashSet<string>(StringComparer.Ordinal);
 
@@ -564,7 +562,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                         return false;
 
                     string escapedPrefix = Regex.Escape(terrainDataPrefix ?? "TD_");
-                    string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\d+|\d+_\d+)$";
+                    string tdRegex = $"^{escapedPrefix}Terrain_.+_(?:[A-Za-z]+\\d+|\\d+_\\d+)$";
                     return Regex.IsMatch(name, tdRegex, RegexOptions.IgnoreCase);
                 });
 

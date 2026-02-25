@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f35d214543b0614d8efa6e10887f89a, type: 3}
   m_Name: TileGridMetadata
   m_EditorClassIdentifier: 
-  tileIndex: {fileID: 0}
+  tileIndex: {fileID: 11400000, guid: 4d1f91b12d2cee540904b4b32c58e8f0, type: 2}
   gridOriginWorld: {x: 0, y: 0, z: 0}
   tileSizeXZ: {x: 250, y: 250}
   gridDimensions: {x: 1, y: 1}
