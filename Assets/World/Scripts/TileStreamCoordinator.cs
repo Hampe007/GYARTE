@@ -518,7 +518,12 @@ public class TileStreamCoordinator : NetworkBehaviour
                 continue;
             }
 
-            if (disableMasterOnStart && terrain.gameObject.activeSelf)
+            bool isConfiguredMasterTerrain = masterTerrain != null && terrain == masterTerrain;
+            bool shouldDisableTerrain = disableMasterOnStart
+                                        && terrain.gameObject.activeSelf
+                                        && (isConfiguredMasterTerrain || masterTerrain == null);
+
+            if (shouldDisableTerrain)
             {
                 terrain.gameObject.SetActive(false);
             }
@@ -539,7 +544,7 @@ public class TileStreamCoordinator : NetworkBehaviour
                 continue;
             }
 
-            if (index != null && index.TryGetByScene(scene.path, out _))
+            if (liveTiles.TryGetValue(scene.path, out var liveTile) && liveTile.Scene.isLoaded)
             {
                 continue;
             }

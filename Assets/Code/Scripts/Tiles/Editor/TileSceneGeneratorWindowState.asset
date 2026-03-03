@@ -31,10 +31,10 @@ MonoBehaviour:
   terrainDataPrefix: TD_
   subfolderPerTerrain: 1
   copyHeights: 1
-  copyAlphamaps: 0
-  copyDetails: 0
-  copyTrees: 0
-  copyProps: 0
+  copyAlphamaps: 1
+  copyDetails: 1
+  copyTrees: 1
+  copyProps: 1
   nonDestructiveReslice: 0
   onlyUpdateIfChanged: 0
   addToBuildSettings: 1

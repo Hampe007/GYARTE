@@ -14,9 +14,12 @@ public static class TileIndexBuilder
     private const float DefaultVerticalPadding = 4000f;
     private const float OriginClusteringToleranceMeters = 0.05f;
 
-    // Matches ..._Tile_<x>_<y> or ..._tile_<x>_<y>
+    // Matches:
+    // - <prefix>_Tile_<x>_<y>   (legacy)
+    // - <prefix>_<x>_<y>        (legacy-ish)
+    // - <prefix>_<tileRef>      (new) where tileRef is "A1"/"AA12" or "0_0"
     private static readonly Regex NamePattern = new(
-        @"^(?<prefix>.+?)_[Tt]ile_(?<x>-?\d+)_(?<y>-?\d+)$",
+        @"^(?<prefix>.+?)(?:_[Tt]ile)?_(?<tile>(?:[A-Za-z]+\d+|\-?\d+_\-?\d+))$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     
     private readonly struct TileBuildSource
@@ -68,7 +71,7 @@ public static class TileIndexBuilder
     [MenuItem("Tiles/Rebuild TileIndex (Auto)")]
     public static void Rebuild()
     {
-        var guids = AssetDatabase.FindAssets("t:Scene _Tile_", new[] { "Assets" })
+        var guids = AssetDatabase.FindAssets("t:Scene", new[] { "Assets" })
             .Distinct()
             .ToArray();
 
@@ -110,9 +113,15 @@ public static class TileIndexBuilder
                 continue;
             }
 
-            int x = int.Parse(m.Groups["x"].Value);
-            int y = int.Parse(m.Groups["y"].Value);
             string label = m.Groups["prefix"].Value;
+            string tileToken = m.Groups["tile"].Value;
+
+            if (!TryParseTileToken(tileToken, out int x, out int y))
+            {
+                skippedName++;
+                continue;
+            }
+
             candidates.Add((new Vector2Int(x, y), path, label));
         }
 
@@ -206,7 +215,8 @@ public static class TileIndexBuilder
             var rootDir = string.IsNullOrEmpty(sceneDir) ? string.Empty : Path.GetDirectoryName(sceneDir)?.Replace("\\", "/");
             if (!string.IsNullOrEmpty(rootDir))
             {
-                string guess = Path.Combine(rootDir, "Props", $"Props_{source.TerrainLabel}_{source.Coord.x}_{source.Coord.y}.asset").Replace("\\", "/");
+                string tileRef = TileDisplayNameUtility.FormatTileReference(source.Coord.x, source.Coord.y);
+                string guess = Path.Combine(rootDir, "Props", $"Props_{source.TerrainLabel}_{tileRef}.asset").Replace("\\", "/");
                 if (File.Exists(guess))
                     propDataPath = guess;
             }
@@ -298,6 +308,23 @@ public static class TileIndexBuilder
             Debug.LogError($"[TileIndexBuilder] Tile {record.coord} is inconsistent. center={record.worldBounds.center}, expected={expected}, origin={record.worldOrigin}, tileSize={record.tileSize}");
         }
         return failures;
+    }
+    
+    private static bool TryParseTileToken(string token, out int x, out int y)
+    {
+        x = y = 0;
+        if (string.IsNullOrWhiteSpace(token))
+            return false;
+
+        int underscore = token.IndexOf('_');
+        if (underscore > 0)
+        {
+            string xs = token.Substring(0, underscore);
+            string ys = token.Substring(underscore + 1);
+            return int.TryParse(xs, out x) && int.TryParse(ys, out y);
+        }
+
+        return TileDisplayNameUtility.TryParseTileReference(token, out x, out y);
     }
 }
 

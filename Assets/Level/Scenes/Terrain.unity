@@ -92563,7 +92563,10 @@ MonoBehaviour:
   m_LightUnit: 0
   m_LuxAtDistance: 1
   m_Intensity: 0
-  m_InnerSpotPercent: 0
+  m_InnerSpotPercent: -1
+  m_ShapeWidth: -1
+  m_ShapeHeight: -1
+  m_AspectRatio: 1
   m_SpotIESCutoffPercent: 100
   m_LightDimmer: 1
   m_VolumetricDimmer: 1
@@ -92572,9 +92575,6 @@ MonoBehaviour:
   m_AffectDiffuse: 1
   m_AffectSpecular: 1
   m_NonLightmappedOnly: 0
-  m_ShapeWidth: 0.5
-  m_ShapeHeight: 0.5
-  m_AspectRatio: 1
   m_ShapeRadius: 0.025
   m_SoftnessScale: 1
   m_UseCustomSpotLightShadowCone: 0
@@ -92681,7 +92681,7 @@ MonoBehaviour:
   m_AreaLightEmissiveMeshShadowCastingMode: 0
   m_AreaLightEmissiveMeshMotionVectorGenerationMode: 0
   m_AreaLightEmissiveMeshLayer: -1
-  m_Version: 13
+  m_Version: 14
   m_ObsoleteShadowResolutionTier: 1
   m_ObsoleteUseShadowQualitySettings: 0
   m_ObsoleteCustomShadowResolution: 512
@@ -92694,14 +92694,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 424206612}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 12
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Intensity: 2000
   m_Range: 10
   m_SpotAngle: 30
-  m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_InnerSpotAngle: 0
+  m_CookieSize2D: {x: 0.5, y: 0.5}
   m_Shadows:
     m_Type: 1
     m_Resolution: -1
@@ -96838,11 +96838,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 60770270dcef4474bbaec628db9d2f87, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mode: 0
-  writeThroughOnDesktop: 1
+  mode: 1
+  writeThroughOnDesktop: 0
   sampleIntervalSeconds: 1
   discardFirstSeconds: 5
-  scenarioTag: temp
+  scenarioTag: stream_desktop
   targetFPS: -1
   targetTerrain: {fileID: 1228233516}
   propGroups: []
@@ -211286,6 +211286,37 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6b53596c9f02e6145b9d44cc3c48f78c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &1004792007
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1004792008}
+  m_Layer: 0
+  m_Name: PrefabPainterRoot
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1004792008
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004792007}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1005030289
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -379133,18 +379164,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: deb2f59e29bd30b4b832464f2ada2aff, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  autoPrefix: Terrain_
-  autoCollect: 1
-  manualTerrains: []
-  settings: {fileID: 11400000, guid: 86df64d9dc3f6e74db4dc56bcdb4325e, type: 2}
-  tileSizeMeters: 250
-  worldOffset: {x: 0, y: 0, z: 0}
   lineColor: {r: 0, g: 1, b: 1, a: 0.85}
-  labelColor: {r: 1, g: 1, b: 1, a: 0.9}
-  drawLabels: 0
-  drawAlways: 0
-  solidFill: 0
-  heightRatio: 0.05
+  debugEnabled: 1
 --- !u!4 &1776597281
 Transform:
   m_ObjectHideFlags: 0
@@ -400731,6 +400752,7 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   index: {fileID: 11400000, guid: 4d1f91b12d2cee540904b4b32c58e8f0, type: 2}
+  gridMetadata: {fileID: 11400000, guid: 61c2890a5c88e3c449c7816aafaeeaf3, type: 2}
   player: {fileID: 0}
   loadRadius: 500
   edgeBuffer: 25
@@ -400743,6 +400765,7 @@ MonoBehaviour:
   masterTerrain: {fileID: 1228233516}
   disableMasterOnStart: 1
   unloadMasterTerrainScene: 1
+  unloadAllTerrainScenesOnStart: 1
 --- !u!4 &1868536485
 Transform:
   m_ObjectHideFlags: 0
@@ -459314,3 +459337,4 @@ SceneRoots:
   - {fileID: 146353446}
   - {fileID: 755512634}
   - {fileID: 1493654770}
+  - {fileID: 1004792008}
