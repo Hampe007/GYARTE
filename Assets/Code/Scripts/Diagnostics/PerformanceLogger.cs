@@ -25,6 +25,9 @@ public class PerformanceLogger : MonoBehaviour
 
     [SerializeField] float discardFirstSeconds = 5f;
     
+    [SerializeField, Tooltip("Adds estimated utilization percentages based on frame budget (1000/target FPS). These are not hardware counters.")]
+    bool includeEstimatedUtilization = true;
+    
     [SerializeField, Tooltip(
          "Label written in each CSV row to identify the test run.\n" +
          "Purely informational — does not affect performance behavior.\n\n" +
@@ -39,7 +42,7 @@ public class PerformanceLogger : MonoBehaviour
     string scenarioTag = "run";
     
 
-    bool _deleteOnExit;
+    bool deleteOnExit;
 
     [Header("Performance Target")]
     [SerializeField, Tooltip("Sets Application.targetFrameRate in Awake. vSync is disabled so this cap applies.")]
@@ -72,16 +75,16 @@ public class PerformanceLogger : MonoBehaviour
     [SerializeField] private KeyCode togglePropsKey = KeyCode.F5;
 
     // Cache of original layers
-    private TerrainLayer[] _originalLayers;
-    private bool _layersCached;
+    private TerrainLayer[] originalLayers;
+    private bool layersCached;
     
-    float _sumFps, _sumCpuMs, _sumGpuMs, _sumRam;
-    int _sampleCount, _gpuCount;
+    float sumFps, sumCpuMs, sumGpuMs, sumRam;
+    int sampleCount, gpuCount;
     
-    float _minFps = float.MaxValue, _maxFps = float.MinValue;
-    float _minCpu = float.MaxValue, _maxCpu = float.MinValue;
-    float _minGpu = float.MaxValue, _maxGpu = float.MinValue;
-    float _minRam = float.MaxValue, _maxRam = float.MinValue;
+    float minFps = float.MaxValue, maxFps = float.MinValue;
+    float minCpu = float.MaxValue, maxCpu = float.MinValue;
+    float minGpu = float.MaxValue, maxGpu = float.MinValue;
+    float minRam = float.MaxValue, maxRam = float.MinValue;
 
 #if UNITY_EDITOR
     void OnValidate()
@@ -117,13 +120,26 @@ public class PerformanceLogger : MonoBehaviour
         }
     }
     
-    string _path;
-    FileStream _stream;
-    StreamWriter _writer;
-    float _t;
+    string path;
+    FileStream stream;
+    StreamWriter writer;
+    float t;
 
-    StringBuilder _buffer;
-    List<string> _rows;
+    StringBuilder buffer;
+    List<string> rows;
+    
+    float FrameBudgetMs
+    {
+        get
+        {
+            int fpsCap = (int)targetFPS;
+            if (fpsCap > 0)
+                return 1000f / fpsCap;
+
+            // Unlimited mode: use recent frame time as a moving budget fallback.
+            return Mathf.Max(Time.unscaledDeltaTime * 1000f, 0.01f);
+        }
+    }
 
     void Awake()
     {
@@ -148,11 +164,11 @@ public class PerformanceLogger : MonoBehaviour
 
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var fileName = $"perf_{scenarioTag}_{stamp}.csv";
-        _path = Path.Combine(logDir, fileName);
+        path = Path.Combine(logDir, fileName);
 
         // CSV header
         string header = $"# Scenario: {scenarioTag}\n" +
-                        "time_s,fps,cpu_ms,gpu_ms,ram_mb";
+                        "time_s,sample_idx,fps,frame_ms,cpu_ms,gpu_ms,cpu_est_util_pct,gpu_est_util_pct,ram_mb";
 
         if (mode == LoggingMode.Continuous)
         {
@@ -165,19 +181,19 @@ public class PerformanceLogger : MonoBehaviour
             (writeThroughOnDesktop ? FileOptions.WriteThrough : FileOptions.None);
             #endif
             
-            _stream = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, options);
-            _writer = new StreamWriter(_stream, new UTF8Encoding(false), 1024, leaveOpen: true);
-            _writer.NewLine = "\n";
-            _writer.AutoFlush = true;
-            _writer.WriteLine(header);
-            _stream.Flush();
+            stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, options);
+            writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, leaveOpen: true);
+            writer.NewLine = "\n";
+            writer.AutoFlush = true;
+            writer.WriteLine(header);
+            stream.Flush();
         }
         else
         {
             // EndOnly: no file I/O during play; buffer rows and dump once
-            _buffer = new StringBuilder(1024);
-            _rows = new List<string>(512);
-            _buffer.AppendLine(header);
+            buffer = new StringBuilder(1024);
+            rows = new List<string>(512);
+            buffer.AppendLine(header);
         }
 
         // Warm up GPU timings
@@ -190,7 +206,7 @@ public class PerformanceLogger : MonoBehaviour
         Debug.Log(
             $"<b>[PerfLogger]</b> Mode=<color=yellow>{mode}</color>, " +
             $"TargetFPS=<color=lime>{targetFPS}</color>\n" +
-            $"<b>Log file:</b> {_path}{deletionNote}\n" +  // raw path = clickable
+            $"<b>Log file:</b> {path}{deletionNote}\n" +  // raw path = clickable
             $"<b>Log folder:</b> <color=#88CCFF>{logDir}</color>"
         );
     }
@@ -204,13 +220,14 @@ public class PerformanceLogger : MonoBehaviour
             LogScenarioStamp();
         }
 
-        _t += Time.unscaledDeltaTime;
-        if (_t < sampleIntervalSeconds) return;
-        _t = 0f;
+        t += Time.unscaledDeltaTime;
+        if (t < sampleIntervalSeconds) return;
+        t = 0f;
 
         float elapsed = Time.time; // seconds since play
         float dt = Time.unscaledDeltaTime;
         float fps = dt > 0f ? 1f / dt : 0f;
+        float frameMs = dt * 1000f;
         float cpuMs = dt * 1000f;
 
         FrameTimingManager.CaptureFrameTimings();
@@ -220,53 +237,60 @@ public class PerformanceLogger : MonoBehaviour
             gpuMs = frames[0].gpuFrameTime;
 
         double ramMB = Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0);
+        float frameBudgetMs = FrameBudgetMs;
+        string cpuUtilPct = includeEstimatedUtilization ? FormatUtilPct(cpuMs, frameBudgetMs) : "";
+        string gpuUtilPct = includeEstimatedUtilization ? FormatUtilPct((float)gpuMs, frameBudgetMs) : "";
 
         /* Skip first N seconds to avoid startup spikes */
         if (elapsed < discardFirstSeconds)
             return;
 
         // Accumulate stats only after warmup
-        _sumFps += fps;
-        _sumCpuMs += cpuMs;
+        sumFps += fps;
+        sumCpuMs += cpuMs;
         if (!double.IsNaN(gpuMs))
         {
-            _sumGpuMs += (float)gpuMs;
-            _gpuCount++;
+            sumGpuMs += (float)gpuMs;
+            gpuCount++;
         }
-        _sumRam += (float)ramMB;
-        _sampleCount++;
+        sumRam += (float)ramMB;
+        sampleCount++;
 
         // Track min/max
-        _minFps = Mathf.Min(_minFps, fps);
-        _maxFps = Mathf.Max(_maxFps, fps);
-        _minCpu = Mathf.Min(_minCpu, cpuMs);
-        _maxCpu = Mathf.Max(_maxCpu, cpuMs);
+        minFps = Mathf.Min(minFps, fps);
+        maxFps = Mathf.Max(maxFps, fps);
+        minCpu = Mathf.Min(minCpu, cpuMs);
+        maxCpu = Mathf.Max(maxCpu, cpuMs);
         if (!double.IsNaN(gpuMs))
         {
-            _minGpu = Mathf.Min(_minGpu, (float)gpuMs);
-            _maxGpu = Mathf.Max(_maxGpu, (float)gpuMs);
+            minGpu = Mathf.Min(minGpu, (float)gpuMs);
+            maxGpu = Mathf.Max(maxGpu, (float)gpuMs);
         }
-        _minRam = Mathf.Min(_minRam, (float)ramMB);
-        _maxRam = Mathf.Max(_maxRam, (float)ramMB);
+        minRam = Mathf.Min(minRam, (float)ramMB);
+        maxRam = Mathf.Max(maxRam, (float)ramMB);
 
         // Write the CSV row normally
         var inv = CultureInfo.InvariantCulture;
         string row = string.Join(",",
             elapsed.ToString("F1", inv),
+            sampleCount.ToString(inv),
             fps.ToString("F0", inv),
+            frameMs.ToString("F2", inv),
             cpuMs.ToString("F1", inv),
             double.IsNaN(gpuMs) ? "" : gpuMs.ToString("F1", inv),
+            cpuUtilPct,
+            gpuUtilPct,
             ramMB.ToString("F1", inv)
         );
 
         if (mode == LoggingMode.Continuous)
         {
-            _writer.WriteLine(row);
-            try { _stream.Flush(); } catch {}
+            writer.WriteLine(row);
+            try { stream.Flush(); } catch {}
         }
         else
         {
-            _rows.Add(row);
+            rows.Add(row);
         }
     }
     
@@ -302,14 +326,14 @@ public class PerformanceLogger : MonoBehaviour
     // Terrain texture layer handling
     private void CacheOriginalTerrainLayers()
     {
-        if (_layersCached) return;
+        if (layersCached) return;
         if (targetTerrain != null && targetTerrain.terrainData != null)
         {
             var layers = targetTerrain.terrainData.terrainLayers;
             if (layers != null && layers.Length > 0)
             {
-                _originalLayers = (TerrainLayer[])layers.Clone();
-                _layersCached = true;
+                originalLayers = (TerrainLayer[])layers.Clone();
+                layersCached = true;
             }
         }
     }
@@ -320,13 +344,13 @@ public class PerformanceLogger : MonoBehaviour
             return;
 
         CacheOriginalTerrainLayers();
-        if (!_layersCached || _originalLayers == null)
+        if (!layersCached || originalLayers == null)
             return;
 
         if (enableTerrainTextures)
         {
             // Restore all original terrains
-            targetTerrain.terrainData.terrainLayers = (TerrainLayer[])_originalLayers.Clone();
+            targetTerrain.terrainData.terrainLayers = (TerrainLayer[])originalLayers.Clone();
         }
         else
         {
@@ -351,7 +375,7 @@ public class PerformanceLogger : MonoBehaviour
         
         // mark for deletion on quit if temp
         if (scenarioTag.Equals("temp", StringComparison.OrdinalIgnoreCase))
-            _deleteOnExit = true;
+            deleteOnExit = true;
     }
 
     void OnDestroy()
@@ -359,59 +383,71 @@ public class PerformanceLogger : MonoBehaviour
         try
         {
             // If EndOnly, dump buffered rows first
-            if (mode == LoggingMode.EndOnly && _buffer != null)
+            if (mode == LoggingMode.EndOnly && buffer != null)
             {
-                foreach (var r in _rows) _buffer.AppendLine(r);
-                File.WriteAllText(_path, _buffer.ToString(), new UTF8Encoding(false));
+                foreach (var r in rows) buffer.AppendLine(r);
+                File.WriteAllText(path, buffer.ToString(), new UTF8Encoding(false));
             }
 
-            _writer?.Flush();
-            _stream?.Flush();
+            writer?.Flush();
+            stream?.Flush();
 
-            if (_sampleCount > 0)
+            if (sampleCount > 0)
             {
                 var inv = CultureInfo.InvariantCulture;
 
-                float avgFps = _sumFps / _sampleCount;
-                float avgCpu = _sumCpuMs / _sampleCount;
-                string avgGpuStr = _gpuCount > 0 ? (_sumGpuMs / _gpuCount).ToString("F1", inv) : "";
-                float avgRam = _sumRam / _sampleCount;
+                float avgFps = sumFps / sampleCount;
+                float avgCpu = sumCpuMs / sampleCount;
+                string avgGpuStr = gpuCount > 0 ? (sumGpuMs / gpuCount).ToString("F1", inv) : "";
+                float avgRam = sumRam / sampleCount;
 
                 string avgLine = string.Join(",",
                     "AVERAGE",
+                    "",
                     avgFps.ToString("F1", inv),
+                    (sumCpuMs / sampleCount).ToString("F2", inv),
                     avgCpu.ToString("F1", inv),
                     avgGpuStr,
+                    includeEstimatedUtilization ? FormatUtilPct(avgCpu, FrameBudgetMs) : "",
+                    includeEstimatedUtilization && gpuCount > 0 ? FormatUtilPct(sumGpuMs / gpuCount, FrameBudgetMs) : "",
                     avgRam.ToString("F1", inv)
                 );
 
                 string minLine = string.Join(",",
                     "MIN",
-                    _minFps.ToString("F1", inv),
-                    _minCpu.ToString("F1", inv),
-                    _gpuCount > 0 ? _minGpu.ToString("F1", inv) : "",
-                    _minRam.ToString("F1", inv)
+                    "",
+                    minFps.ToString("F1", inv),
+                    minCpu.ToString("F1", inv),
+                    minCpu.ToString("F1", inv),
+                    gpuCount > 0 ? minGpu.ToString("F1", inv) : "",
+                    includeEstimatedUtilization ? FormatUtilPct(minCpu, FrameBudgetMs) : "",
+                    includeEstimatedUtilization && gpuCount > 0 ? FormatUtilPct(minGpu, FrameBudgetMs) : "",
+                    minRam.ToString("F1", inv)
                 );
 
                 string maxLine = string.Join(",",
                     "MAX",
-                    _maxFps.ToString("F1", inv),
-                    _maxCpu.ToString("F1", inv),
-                    _gpuCount > 0 ? _maxGpu.ToString("F1", inv) : "",
-                    _maxRam.ToString("F1", inv)
+                    "",
+                    maxFps.ToString("F1", inv),
+                    maxCpu.ToString("F1", inv),
+                    maxCpu.ToString("F1", inv),
+                    gpuCount > 0 ? maxGpu.ToString("F1", inv) : "",
+                    includeEstimatedUtilization ? FormatUtilPct(maxCpu, FrameBudgetMs) : "",
+                    includeEstimatedUtilization && gpuCount > 0 ? FormatUtilPct(maxGpu, FrameBudgetMs) : "",
+                    maxRam.ToString("F1", inv)
                 );
 
                 if (mode == LoggingMode.Continuous)
                 {
-                    _writer?.WriteLine(avgLine);
-                    _writer?.WriteLine(minLine);
-                    _writer?.WriteLine(maxLine);
-                    try { _stream?.Flush(); } catch {}
+                    writer?.WriteLine(avgLine);
+                    writer?.WriteLine(minLine);
+                    writer?.WriteLine(maxLine);
+                    try { stream?.Flush(); } catch {}
                 }
                 else
                 {
-                    if (File.Exists(_path))
-                        File.AppendAllText(_path, "\n" + avgLine + "\n" + minLine + "\n" + maxLine);
+                    if (File.Exists(path))
+                        File.AppendAllText(path, "\n" + avgLine + "\n" + minLine + "\n" + maxLine);
                 }
             }
         }
@@ -419,16 +455,16 @@ public class PerformanceLogger : MonoBehaviour
         finally
         {
             // Close handles before deletion
-            try { _writer?.Dispose(); } catch {}
-            try { _stream?.Dispose(); } catch {}
+            try { writer?.Dispose(); } catch {}
+            try { stream?.Dispose(); } catch {}
 
             // Delete temp logs after everything is written and closed
             try
             {
-                if (scenarioTag.Equals("temp", StringComparison.OrdinalIgnoreCase) && File.Exists(_path))
+                if (scenarioTag.Equals("temp", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
                 {
-                    File.Delete(_path);
-                    Debug.Log($"[PerfLogger] Deleted temp log: {_path}");
+                    File.Delete(path);
+                    Debug.Log($"[PerfLogger] Deleted temp log: {path}");
                 }
             }
             catch (Exception ex)
@@ -479,6 +515,7 @@ public class PerformanceLogger : MonoBehaviour
         }
 
         float fps = dt > 0f ? 1f / dt : 0f;
+        float frameMs = dt * 1000f;
         float cpuMs = dt * 1000f;
 
         FrameTimingManager.CaptureFrameTimings();
@@ -488,50 +525,66 @@ public class PerformanceLogger : MonoBehaviour
             gpuMs = frames[0].gpuFrameTime;
 
         double ramMB = Profiler.GetTotalAllocatedMemoryLong() / (1024.0 * 1024.0);
+        float frameBudgetMs = FrameBudgetMs;
+        string cpuUtilPct = includeEstimatedUtilization ? FormatUtilPct(cpuMs, frameBudgetMs) : "";
+        string gpuUtilPct = includeEstimatedUtilization ? FormatUtilPct((float)gpuMs, frameBudgetMs) : "";
 
         // Accumulate for averages
-        _sumFps += fps;
-        _sumCpuMs += cpuMs;
+        sumFps += fps;
+        sumCpuMs += cpuMs;
         if (!double.IsNaN(gpuMs))
         {
-            _sumGpuMs += (float)gpuMs;
-            _gpuCount++;
+            sumGpuMs += (float)gpuMs;
+            gpuCount++;
         }
-        _sumRam += (float)ramMB;
-        _sampleCount++;
+        sumRam += (float)ramMB;
+        sampleCount++;
 
         // Track min/max
-        _minFps = Mathf.Min(_minFps, fps);
-        _maxFps = Mathf.Max(_maxFps, fps);
-        _minCpu = Mathf.Min(_minCpu, cpuMs);
-        _maxCpu = Mathf.Max(_maxCpu, cpuMs);
+        minFps = Mathf.Min(minFps, fps);
+        maxFps = Mathf.Max(maxFps, fps);
+        minCpu = Mathf.Min(minCpu, cpuMs);
+        maxCpu = Mathf.Max(maxCpu, cpuMs);
         if (!double.IsNaN(gpuMs))
         {
-            _minGpu = Mathf.Min(_minGpu, (float)gpuMs);
-            _maxGpu = Mathf.Max(_maxGpu, (float)gpuMs);
+            minGpu = Mathf.Min(minGpu, (float)gpuMs);
+            maxGpu = Mathf.Max(maxGpu, (float)gpuMs);
         }
-        _minRam = Mathf.Min(_minRam, (float)ramMB);
-        _maxRam = Mathf.Max(_maxRam, (float)ramMB);
+        minRam = Mathf.Min(minRam, (float)ramMB);
+        maxRam = Mathf.Max(maxRam, (float)ramMB);
 
         // Compose CSV row
         var inv = CultureInfo.InvariantCulture;
         string row = string.Join(",",
             Time.time.ToString("F1", inv),
+            sampleCount.ToString(inv),
             fps.ToString("F0", inv),
+            frameMs.ToString("F2", inv),
             cpuMs.ToString("F1", inv),
             double.IsNaN(gpuMs) ? "" : gpuMs.ToString("F1", inv),
+            cpuUtilPct,
+            gpuUtilPct,
             ramMB.ToString("F1", inv)
         );
 
         if (mode == LoggingMode.Continuous)
         {
-            _writer?.WriteLine(row);
-            try { _stream?.Flush(); } catch {}
+            writer?.WriteLine(row);
+            try { stream?.Flush(); } catch {}
         }
         else
         {
-            _rows?.Add(row);
+            rows?.Add(row);
         }
+    }
+    
+    static string FormatUtilPct(float ms, float frameBudgetMs)
+    {
+        if (float.IsNaN(ms) || float.IsInfinity(ms) || ms < 0f || frameBudgetMs <= 0f)
+            return "";
+
+        float pct = Mathf.Clamp((ms / frameBudgetMs) * 100f, 0f, 999f);
+        return pct.ToString("F1", CultureInfo.InvariantCulture);
     }
 }
 

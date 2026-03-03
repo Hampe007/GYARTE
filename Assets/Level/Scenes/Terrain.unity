@@ -96842,7 +96842,8 @@ MonoBehaviour:
   writeThroughOnDesktop: 0
   sampleIntervalSeconds: 1
   discardFirstSeconds: 5
-  scenarioTag: stream_desktop
+  includeEstimatedUtilization: 1
+  scenarioTag: nonstream_desktop
   targetFPS: -1
   targetTerrain: {fileID: 1228233516}
   propGroups: []
