@@ -6,8 +6,10 @@ using UnityEditor;
 public static class TileGridMetadataProvider
 {
     public const string CanonicalAssetPath = "Assets/Resources/TileGridMetadata.asset";
-
     private static TileGridMetadata cached;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetCache() => cached = null;
 
     public static TileGridMetadata GetOrLoad()
     {
