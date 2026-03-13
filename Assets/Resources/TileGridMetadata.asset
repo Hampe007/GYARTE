@@ -15,7 +15,7 @@ MonoBehaviour:
   tileIndex: {fileID: 0}
   gridOriginWorld: {x: 5000, y: 0, z: 0}
   tileSizeXZ: {x: 256, y: 312.5}
-  gridDimensions: {x: 16, y: 16}
+  gridDimensions: {x: 54, y: 16}
   coordinateSystem: 0
   terrains:
   - label: Terrain_Master

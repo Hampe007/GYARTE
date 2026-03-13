@@ -136,7 +136,7 @@ public static class TileIndexBuilder
             .Where(g => g.Count() > 1)
             .ToDictionary(g => g.Key, g => g.Select(v => v.path).OrderBy(p => p).ToList());
 
-        if (duplicatesByCoord.Count > 0 && !index.NamespaceDuplicateCoordsByTerrainLabel)
+        if (duplicatesByCoord.Count > 0)
         {
             Debug.LogError(
                 $"[TileIndexBuilder] Found {duplicatesByCoord.Count} duplicate tile coord groups, but TileIndex.NamespaceDuplicateCoordsByTerrainLabel is disabled. " +
@@ -150,28 +150,14 @@ public static class TileIndexBuilder
 
             return;
         }
-
-        List<(Vector2Int coord, string path, string label)> selected;
-        if (index.NamespaceDuplicateCoordsByTerrainLabel)
-        {
-            selected = candidates
-                .GroupBy(c => (c.coord, c.label), (key, group) =>
-                {
-                    var preferred = group.OrderByDescending(v => v.path.Count(ch => ch == '/')).ThenBy(v => v.path).First();
-                    return (key.coord, preferred.path, key.label);
-                })
-                .ToList();
-        }
-        else
-        {
-            selected = candidates
-                .GroupBy(c => c.coord, (coord, group) =>
-                {
-                    var preferred = group.OrderByDescending(v => v.path.Count(ch => ch == '/')).ThenBy(v => v.path).First();
-                    return (coord, preferred.path, preferred.label);
-                })
-                .ToList();
-        }
+        
+        var selected = candidates
+            .GroupBy(c => c.coord, (coord, group) =>
+            {
+                var preferred = group.OrderByDescending(v => v.path.Count(ch => ch == '/')).ThenBy(v => v.path).First();
+                return (coord, preferred.path, preferred.label);
+            })
+            .ToList();
 
         var sources = new List<TileBuildSource>(selected.Count);
         
@@ -245,20 +231,9 @@ public static class TileIndexBuilder
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        var dupCount = duplicatesByCoord.Count;
         Debug.Log(
             $"[TileIndexBuilder] Rebuilt TileIndex with {records.Count} tiles. " +
-            $"Scanned scenes: {guids.Length}, matched names: {candidates.Count}, skipped (name): {skippedName}, duplicate coords: {dupCount}, " +
-            $"namespaced: {index.NamespaceDuplicateCoordsByTerrainLabel}");
-
-        if (dupCount > 0 && index.NamespaceDuplicateCoordsByTerrainLabel)
-        {
-            foreach (var kv in duplicatesByCoord.Take(20))
-                Debug.Log($"[TileIndexBuilder] Duplicate coord {kv.Key} intentionally namespaced by terrain label. Sources: {string.Join(", ", kv.Value)}");
-
-            if (dupCount > 20)
-                Debug.Log($"[TileIndexBuilder] ...and {dupCount - 20} more duplicate coord groups");
-        }
+            $"Scanned scenes: {guids.Length}, matched names: {candidates.Count}, skipped (name): {skippedName}");
     }
 
     private static Vector2 ResolveGlobalOriginOffset(IEnumerable<TileBuildSource> sources, Vector2 tileSize, Vector2 fallback)

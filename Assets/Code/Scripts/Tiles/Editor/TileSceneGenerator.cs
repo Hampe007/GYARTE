@@ -44,7 +44,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     // cached for current terrain
     private TerrainData _srcTD;
-    private string _currentTerrainLabel = "";
+    private string currentTerrainLabel = "";
 
     // Grid (meters)
     [SerializeField] private float tileSizeMeters = 250f;
@@ -826,7 +826,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 return false;
         }
 
-        // Any subdirectories means not empty.
+        // Any subdirectories mean it's not empty.
         foreach (var dir in Directory.EnumerateDirectories(absolute, "*", SearchOption.TopDirectoryOnly))
             return false;
 
@@ -891,7 +891,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 _treesAdded = _treesRemoved = _treesModifiedTiles = 0;
                 var terrainTimer = Stopwatch.StartNew();
 
-                _currentTerrainLabel = snap.label;
+                currentTerrainLabel = snap.label;
                 _srcTD               = snap.data;
                 Vector3 cachedOrigin = snap.origin;
 
@@ -905,29 +905,29 @@ public sealed class TileSceneGenerator : ScriptableObject
                 }
 
                 string perTerrainOutputRoot = subfolderPerTerrain
-                    ? NormalizeAssetPath($"{originalOutputRoot}/{_currentTerrainLabel}")
+                    ? NormalizeAssetPath($"{originalOutputRoot}/{currentTerrainLabel}")
                     : originalOutputRoot;
 
-                _gizmoStatus[_currentTerrainLabel] = settings ? "unchanged" : "n/a (no TileSliceSettings)";
+                _gizmoStatus[currentTerrainLabel] = settings ? "unchanged" : "n/a (no TileSliceSettings)";
                 
                 ComputeGridFromMeters();
                 
-                bool isMaster = IsMasterTerrainLabel(_currentTerrainLabel);
+                bool isMaster = IsMasterTerrainLabel(currentTerrainLabel);
                 AutoFixTilesToDivisibleResolutionsIfNeeded(requireSquareTiles: isMaster);
                 
                 ValidateInputs(perTerrainOutputRoot);
-                DeleteOldTileScenes(_outputScenesFolder, _currentTerrainLabel, tilesX, tilesY);
-                DeleteOldTerrainDataAssets(_outputDataFolder, _currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
-                DeleteOldPropDataAssets(_outputPropsFolder, _currentTerrainLabel, tilesX, tilesY);
+                DeleteOldTileScenes(_outputScenesFolder, currentTerrainLabel, tilesX, tilesY);
+                DeleteOldTerrainDataAssets(_outputDataFolder, currentTerrainLabel, terrainDataPrefix, tilesX, tilesY);
+                DeleteOldPropDataAssets(_outputPropsFolder, currentTerrainLabel, tilesX, tilesY);
                 var currentGeneratedSceneManifest = BuildGeneratedScenePathManifest(_outputScenesFolder, tilesX, tilesY);
-                RemoveOldBuildSettingsEntries(_currentTerrainLabel, currentGeneratedSceneManifest);
+                RemoveOldBuildSettingsEntries(currentTerrainLabel, currentGeneratedSceneManifest);
                 
-                if (settings && settings.TryGet(_currentTerrainLabel, out var r))
+                if (settings && settings.TryGet(currentTerrainLabel, out var r))
                 {
                     r.origin = cachedOrigin; 
                     EditorUtility.SetDirty(settings);
                 }
-                var terrainRecords = RunSliceOrReslice(cachedOrigin, cordOffset);
+                var terrainRecords = RunSliceOrReslice(cachedOrigin, coordOffset);
                 allTileIndexRecords.AddRange(terrainRecords);
                 expectedTileCount += tilesX * tilesY;
 
@@ -939,7 +939,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 else if (sharedTileSize2D.Value != terrainTileSize2D)
                 {
                     Debug.LogWarning(
-                        $"[TileSceneGenerator] Terrain '{_currentTerrainLabel}' has tile size {terrainTileSize2D}, " +
+                        $"[TileSceneGenerator] Terrain '{currentTerrainLabel}' has tile size {terrainTileSize2D}, " +
                         $"but prior terrains used {sharedTileSize2D.Value}. TileIndex tile size remains {sharedTileSize2D.Value}."
                     );
                 }
@@ -951,7 +951,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 
                 var elapsed = terrainTimer.Elapsed;
                 string formatted = $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds}s";
-                _terrainLog.AppendLine($"Finished {_currentTerrainLabel} in {formatted}.");
+                _terrainLog.AppendLine($"Finished {currentTerrainLabel} in {formatted}.");
 
                 var changedKinds = new List<string>(4);
                 if (_changedHeights)  changedKinds.Add("heights");
@@ -979,7 +979,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 }
                 
                 // Save per-terrain summary for the final run report
-                _finalContentSummary[_currentTerrainLabel] = contentLine;
+                _finalContentSummary[currentTerrainLabel] = contentLine;
 
                 // Emit ONE log for this terrain (includes grid line, gizmo status, finish time, and the change summary)
                 Log(_terrainLog.ToString());
@@ -1300,7 +1300,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
             _terrainLog.AppendLine(
                 $"Auto-fix divisibility: {oldX}×{oldY} -> {tilesX}×{tilesY} " +
-                $"(tile {fx:0.##}×{fy:0.##} m) for '{_currentTerrainLabel}'.");
+                $"(tile {fx:0.##}×{fy:0.##} m) for '{currentTerrainLabel}'.");
         }
     }
 
@@ -1372,7 +1372,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (tileSizeMeters <= 0f)
             throw new ArgumentOutOfRangeException(nameof(tileSizeMeters), "Tile Size (meters) must be > 0.");
 
-        bool isMaster = IsMasterTerrain(_currentTerrainLabel);
+        bool isMaster = IsMasterTerrain(currentTerrainLabel);
 
         var sz = _srcTD.size;
 
@@ -1399,7 +1399,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (settings)
         {
             bool changed = true;
-            if (settings.TryGet(_currentTerrainLabel, out var old))
+            if (settings.TryGet(currentTerrainLabel, out var old))
             {
                 changed =
                     !Mathf.Approximately(old.size.x, sz.x) ||
@@ -1412,21 +1412,21 @@ public sealed class TileSceneGenerator : ScriptableObject
 
             if (changed)
             {
-                settings.Upsert(_currentTerrainLabel, Vector3.zero, sz, tilesX, tilesY, finalX, finalY);
+                settings.Upsert(currentTerrainLabel, Vector3.zero, sz, tilesX, tilesY, finalX, finalY);
                 EditorUtility.SetDirty(settings);
-                _changedTerrains.Add(_currentTerrainLabel);
+                _changedTerrains.Add(currentTerrainLabel);
 
-                _terrainLog.AppendLine($"Gizmo data updated for '{_currentTerrainLabel}' → {tilesX}×{tilesY} tiles @ {finalX:0.##}×{finalY:0.##} m each.");
-                _gizmoStatus[_currentTerrainLabel] = "updated";
+                _terrainLog.AppendLine($"Gizmo data updated for '{currentTerrainLabel}' → {tilesX}×{tilesY} tiles @ {finalX:0.##}×{finalY:0.##} m each.");
+                _gizmoStatus[currentTerrainLabel] = "updated";
             }
             else
             {
-                _terrainLog.AppendLine($"Gizmo data unchanged for '{_currentTerrainLabel}'.");
-                _gizmoStatus[_currentTerrainLabel] = "unchanged";
+                _terrainLog.AppendLine($"Gizmo data unchanged for '{currentTerrainLabel}'.");
+                _gizmoStatus[currentTerrainLabel] = "unchanged";
             }
         }
 
-        _terrainLog.AppendLine($"{_currentTerrainLabel}: {tilesX}×{tilesY} tiles, size {finalX:0.##}×{finalY:0.##} m (desired {tileSizeMeters:0.##}, master={isMaster}).");
+        _terrainLog.AppendLine($"{currentTerrainLabel}: {tilesX}×{tilesY} tiles, size {finalX:0.##}×{finalY:0.##} m (desired {tileSizeMeters:0.##}, master={isMaster}).");
     }
     
     private void ValidateTileCountBudget(int countX, int countY)
@@ -1437,7 +1437,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (countX > axisLimit || countY > axisLimit)
         {
             throw new InvalidOperationException(
-                $"Terrain '{_currentTerrainLabel}' resolves to {countX}×{countY} tiles, which exceeds Max Tiles Per Axis ({axisLimit}). " +
+                $"Terrain '{currentTerrainLabel}' resolves to {countX}×{countY} tiles, which exceeds Max Tiles Per Axis ({axisLimit}). " +
                 "Increase tile size or raise the safety limit in Advanced Options.");
         }
 
@@ -1445,7 +1445,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (total > totalLimit)
         {
             throw new InvalidOperationException(
-                $"Terrain '{_currentTerrainLabel}' resolves to {countX}×{countY} = {total} tiles, which exceeds Max Tiles Per Terrain ({totalLimit}). " +
+                $"Terrain '{currentTerrainLabel}' resolves to {countX}×{countY} = {total} tiles, which exceeds Max Tiles Per Terrain ({totalLimit}). " +
                 "Increase tile size or raise the safety limit in Advanced Options.");
         }
     }
@@ -1669,7 +1669,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private string GetPropAssetPath(int tx, int ty)
     {
-        return $"{_outputPropsFolder}/Props_{TileDisplayNameUtility.FormatTerrainTileLabel(_currentTerrainLabel, tx, ty)}.asset";
+        return $"{_outputPropsFolder}/Props_{TileDisplayNameUtility.FormatTerrainTileLabel(currentTerrainLabel, tx, ty)}.asset";
     }
     
     #region PropTileData Saving
@@ -1720,7 +1720,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         int remainder = value % divisor;
         if (remainder != 0)
         {
-            throw new InvalidOperationException($"Terrain '{_currentTerrainLabel}' {label} ({value}) must divide evenly by tiles ({divisor}). Adjust tile size or terrain resolution to avoid seams.");
+            throw new InvalidOperationException($"Terrain '{currentTerrainLabel}' {label} ({value}) must divide evenly by tiles ({divisor}). Adjust tile size or terrain resolution to avoid seams.");
         }
     }
     
@@ -1781,7 +1781,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             if (missingPrototypeCount > 0)
             {
                 LogWarning(
-                    $"Source terrain '{_currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
+                    $"Source terrain '{currentTerrainLabel}' has {missingPrototypeCount} tree prototype(s) without prefabs. " +
                     "Tree instances using them will be skipped during slicing."
                 );
             }
@@ -1790,7 +1790,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             {
                 treePrototypes = null;
                 LogWarning(
-                    $"Source terrain '{_currentTerrainLabel}' does not contain any valid tree prefabs to copy."
+                    $"Source terrain '{currentTerrainLabel}' does not contain any valid tree prefabs to copy."
                 );
             }
         }
@@ -1819,7 +1819,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 for (int tx = 0; tx < tilesX; tx++)
                 {
                     float progress = processed / (float)total;
-                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{_currentTerrainLabel}]",
+                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{currentTerrainLabel}]",
                         $"Processing tile {TileDisplayNameUtility.FormatTileReference(tx, ty)}", progress);
                     
                     EnsureOutputWriteFolders();
@@ -1831,7 +1831,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                     );
 
                     // Save TerrainData under DATA folder
-                    string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{TileDisplayNameUtility.FormatTerrainTileLabel(_currentTerrainLabel, tx, ty)}.asset";
+                    string tdPath = $"{_outputDataFolder}/{terrainDataPrefix}{TileDisplayNameUtility.FormatTerrainTileLabel(currentTerrainLabel, tx, ty)}.asset";
                     var existingTD = AssetDatabase.LoadAssetAtPath<TerrainData>(tdPath);
 
                     bool heightsChanged = false, alphaChanged = false, detailsChanged = false, treesChanged = false;
@@ -1919,13 +1919,13 @@ public sealed class TileSceneGenerator : ScriptableObject
                             tempIndexRecords.Add(new TileIndex.TileRecord
                             {
                                 coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
-                                terrainLabel = _currentTerrainLabel,
+                                terrainLabel = currentTerrainLabel,
                                 scenePath = tileScenePath,
-                                worldBounds = tileBounds,
+                                worldBounds = new Bounds(boundsCenter, boundsSize),
                                 worldOrigin = tileOrigin,
                                 tileSize = tileSize,
                                 propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
-                                propDataPath = propDataPath
+                                propDataPath = propAssetPath
                             });
                         }
                         finally
@@ -1972,7 +1972,8 @@ public sealed class TileSceneGenerator : ScriptableObject
                             worldBounds = new Bounds(boundsCenter, boundsSize),
                             worldOrigin = tileOrigin,
                             tileSize = tileSize,
-                            propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty,
+                            terrainLabel = currentTerrainLabel,
+                            propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
                             propDataPath = propAssetPath
                         });
                     }
@@ -2552,7 +2553,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             .Replace("{tile}", tileRef)
             .Replace("{x}", tx.ToString())
             .Replace("{y}", ty.ToString())
-            .Replace("{t}", _currentTerrainLabel);
+            .Replace("{t}", currentTerrainLabel);
     }
     
     private void EnsureSettingsAsset()

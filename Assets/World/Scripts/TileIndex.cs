@@ -185,10 +185,5 @@ public class TileIndex : ScriptableObject
     {
         tileSizeMeters = newTileSize;
     }
-    
-    public void SetNamespaceDuplicateCoordsByTerrainLabel(bool enabled)
-    {
-        namespaceDuplicateCoordsByTerrainLabel = enabled;
-    }
 #endif
 }
