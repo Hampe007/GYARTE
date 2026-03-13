@@ -278,6 +278,26 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private IEnumerator ApplyClientSceneSet(IEnumerable<string> scenePaths)
     {
+        // If a previous coroutine was interrupted mid-load, scenes may have finished
+        // loading without being registered in liveTiles. Catch them up now.
+        if (index != null)
+        {
+            foreach (var path in clientLoaded.ToList())
+            {
+                var existingScene = SceneManager.GetSceneByPath(path);
+                if (existingScene.isLoaded && !liveTiles.ContainsKey(path))
+                {
+                    if (index.TryGetByScene(path, out var rec))
+                    {
+                        liveTiles[path] = new TileInstance(rec, existingScene);
+                        WireTerrainNeighbors(path);
+                        if (logActions)
+                            Debug.Log($"[TileStream] Reconciled untracked loaded scene: {path}");
+                    }
+                }
+            }
+        }
+    
         var desired = new HashSet<string>(scenePaths ?? Enumerable.Empty<string>());
 
         if (desired.SetEquals(clientLoaded))
