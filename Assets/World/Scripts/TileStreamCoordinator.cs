@@ -120,6 +120,14 @@ public class TileStreamCoordinator : NetworkBehaviour
         TryResolvePlayerAndOfflineTarget();
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
+        
+        if (masterTerrain != null)
+        {
+            var ms = masterTerrain.gameObject.scene;
+            if (ms.IsValid() && !string.IsNullOrEmpty(ms.path))
+                masterTerrainScenePath = ms.path;
+        }
+        
         masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
         firstTileLoadConfirmed = liveTiles.Count > 0;
     }
@@ -585,21 +593,9 @@ public class TileStreamCoordinator : NetworkBehaviour
     
     private bool ShouldDisableMasterTerrainNow()
     {
-        if (masterTerrain == null)
-        {
-            return true;
-        }
-
-        if (masterDisabled)
-        {
-            return true;
-        }
-
-        if (liveTiles.Count > 0)
-        {
-            firstTileLoadConfirmed = true;
-        }
-
+        if (masterTerrain == null) return false;
+        if (masterDisabled) return false;
+        if (liveTiles.Count > 0) firstTileLoadConfirmed = true;
         return firstTileLoadConfirmed && liveTiles.Count > 0;
     }
 
