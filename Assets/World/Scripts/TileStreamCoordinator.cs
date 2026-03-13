@@ -770,6 +770,8 @@ public class TileStreamCoordinator : NetworkBehaviour
         return true;
     }
 
+    public bool IsStartupLoadingOverlayVisible => showLoadingOverlay && ShouldDisplayLoadingOverlay();
+
     private void CacheMasterTerrainScene()
     {
         if (masterTerrain == null)
