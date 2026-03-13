@@ -135,6 +135,12 @@ public class PlayerMovementController : NetworkBehaviour
 
     private void Update()
     {
+        if (!CanProcessMovement())
+        {
+            StopMovementState();
+            return;
+        }
+
         // If Mirror networking is active, only the local player should move.
         // If networking is NOT active (editor singleplayer test), allow movement.
         if (NetworkClient.active && !isLocalPlayer)
@@ -151,6 +157,7 @@ public class PlayerMovementController : NetworkBehaviour
 
         if (playerCharacterController == null)
         {
+            StopMovementState();
             return;
         }
 
@@ -255,6 +262,12 @@ public class PlayerMovementController : NetworkBehaviour
 
     private void HandleMovement()
     {
+        if (!CanProcessMovement())
+        {
+            StopMovementState();
+            return;
+        }
+
         isPlayerGrounded = playerCharacterController.isGrounded;
 
         // 1) Read movement input (x = strafe, y = forward/back)
@@ -361,7 +374,43 @@ public class PlayerMovementController : NetworkBehaviour
 
         playerCurrentVelocity = finalVelocity;
 
-        playerCharacterController.Move(playerCurrentVelocity * Time.deltaTime);
+        if (CanProcessMovement())
+        {
+            playerCharacterController.Move(playerCurrentVelocity * Time.deltaTime);
+        }
+        else
+        {
+            StopMovementState();
+        }
+    }
+
+    private bool CanProcessMovement()
+    {
+        return isActiveAndEnabled &&
+               gameObject.activeInHierarchy &&
+               playerCharacterController != null &&
+               playerCharacterController.enabled;
+    }
+
+    private void OnDisable()
+    {
+        StopMovementState();
+    }
+
+    private void OnDestroy()
+    {
+        StopMovementState();
+    }
+
+    private void StopMovementState()
+    {
+        playerCurrentVelocity = Vector3.zero;
+        isPlayerSprinting = false;
+
+        if (playerStamina != null)
+        {
+            playerStamina.SetSprintingState(false);
+        }
     }
     
     /// <summary>
