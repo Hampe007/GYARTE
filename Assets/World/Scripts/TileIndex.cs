@@ -22,7 +22,6 @@ public class TileIndex : ScriptableObject
 
     [SerializeField] private Vector2 tileSizeMeters = new(250f, 250f);
     [SerializeField] private Vector2 originOffsetMeters = Vector2.zero;
-    [SerializeField] private bool namespaceDuplicateCoordsByTerrainLabel;
     
     [SerializeField] private List<TileRecord> tiles = new();
 
@@ -31,7 +30,6 @@ public class TileIndex : ScriptableObject
 
     public Vector2 TileSizeMeters => tileSizeMeters;
     public Vector2 OriginOffsetMeters => originOffsetMeters;
-    public bool NamespaceDuplicateCoordsByTerrainLabel => namespaceDuplicateCoordsByTerrainLabel;
     public IReadOnlyList<TileRecord> Tiles => tiles;
 
     private void OnEnable()
