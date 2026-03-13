@@ -60,6 +60,26 @@ public class TileStreamCoordinator : NetworkBehaviour
     private bool firstTileLoadConfirmed;
     private bool startupTerrainsHandled;
 
+    [Header("Startup Safety")]
+    [SerializeField] private bool gatePlayerUntilTileReady = true;
+
+    [Header("Startup Loading Overlay")]
+    [SerializeField] private bool showStartupLoadingScreen = true;
+    [SerializeField] private string startupLoadingText = "Loading world...";
+    [SerializeField, Min(0f)] private float hideLoadingOverlayDelay = 0.2f;
+    [SerializeField, Min(0f)] private float maxGroundSettleWait = 2f;
+
+    private Transform gatedPlayer;
+    private CharacterController gatedCharacterController;
+    private Rigidbody gatedRigidbody;
+    private bool gateApplied;
+    private bool playerStartupGateReleased;
+    private bool cachedRigidbodyUseGravity;
+    private bool cachedRigidbodyIsKinematic;
+    private RigidbodyConstraints cachedRigidbodyConstraints;
+    private bool showLoadingOverlay;
+    private Coroutine hideLoadingOverlayCoroutine;
+
     public IReadOnlyCollection<string> ServerTiles => serverLoaded;
     public IReadOnlyCollection<string> ClientTiles => clientLoaded;
     
@@ -368,11 +388,22 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             if (offlineLoop == null) offlineLoop = StartCoroutine(OfflineLoop());
         }
+
+        TryUpdatePlayerStartupGate();
     }
 
 
     private void OnDisable()
     {
+        ReleasePlayerStartupGate();
+        showLoadingOverlay = false;
+
+        if (hideLoadingOverlayCoroutine != null)
+        {
+            StopCoroutine(hideLoadingOverlayCoroutine);
+            hideLoadingOverlayCoroutine = null;
+        }
+
         if (resolvePlayerLoop != null)
         {
             StopCoroutine(resolvePlayerLoop);
@@ -483,11 +514,262 @@ public class TileStreamCoordinator : NetworkBehaviour
             offlineTarget = player;
         }
 
+        TryUpdatePlayerStartupGate();
+
         CacheMasterTerrainScene();
 
         return prevPlayer != player || prevOffline != offlineTarget;
     }
+
+    private void Update()
+    {
+        TryUpdatePlayerStartupGate();
+    }
+
+    private void TryUpdatePlayerStartupGate()
+    {
+        if (!gatePlayerUntilTileReady)
+        {
+            ReleasePlayerStartupGate();
+            showLoadingOverlay = false;
+            return;
+        }
+
+        if (playerStartupGateReleased)
+        {
+            return;
+        }
+
+        showLoadingOverlay = showStartupLoadingScreen;
+
+        if (player == null)
+        {
+            ApplyPlayerStartupGate(player);
+            return;
+        }
+
+        if (HasLoadedTileCoveringPosition(player.position))
+        {
+            ReleasePlayerStartupGate();
+            playerStartupGateReleased = true;
+
+            if (logActions)
+            {
+                Debug.Log($"[TileStream] Released startup gate for '{player.name}' after initial tile became available.");
+            }
+
+            BeginHideLoadingOverlayAfterSettle();
+            return;
+        }
+
+        ApplyPlayerStartupGate(player);
+    }
+
+    private void ApplyPlayerStartupGate(Transform target)
+    {
+        if (target != gatedPlayer)
+        {
+            ReleasePlayerStartupGate();
+            gatedPlayer = target;
+        }
+
+        if (gatedPlayer == null)
+        {
+            return;
+        }
+
+        if (gatedCharacterController == null)
+        {
+            gatedCharacterController = gatedPlayer.GetComponent<CharacterController>();
+        }
+
+        if (gatedRigidbody == null)
+        {
+            gatedRigidbody = gatedPlayer.GetComponent<Rigidbody>();
+            if (gatedRigidbody != null)
+            {
+                cachedRigidbodyUseGravity = gatedRigidbody.useGravity;
+                cachedRigidbodyIsKinematic = gatedRigidbody.isKinematic;
+                cachedRigidbodyConstraints = gatedRigidbody.constraints;
+            }
+        }
+
+        if (gatedCharacterController != null)
+        {
+            gatedCharacterController.enabled = false;
+        }
+
+        if (gatedRigidbody != null)
+        {
+            gatedRigidbody.useGravity = false;
+            gatedRigidbody.isKinematic = true;
+            gatedRigidbody.constraints = RigidbodyConstraints.FreezeAll;
+            gatedRigidbody.velocity = Vector3.zero;
+            gatedRigidbody.angularVelocity = Vector3.zero;
+        }
+
+        gateApplied = true;
+    }
+
+    private void ReleasePlayerStartupGate()
+    {
+        if (!gateApplied)
+        {
+            return;
+        }
+
+        if (gatedCharacterController != null)
+        {
+            gatedCharacterController.enabled = true;
+        }
+
+        if (gatedRigidbody != null)
+        {
+            gatedRigidbody.useGravity = cachedRigidbodyUseGravity;
+            gatedRigidbody.isKinematic = cachedRigidbodyIsKinematic;
+            gatedRigidbody.constraints = cachedRigidbodyConstraints;
+        }
+
+        gatedPlayer = null;
+        gatedCharacterController = null;
+        gatedRigidbody = null;
+        gateApplied = false;
+    }
+
+    public bool HasLoadedTileCoveringPosition(Vector3 worldPosition)
+    {
+        if (liveTiles.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var tile in liveTiles.Values)
+        {
+            if (!tile.Scene.isLoaded)
+            {
+                continue;
+            }
+
+            Bounds bounds = tile.Record.worldBounds;
+            if (worldPosition.x < bounds.min.x || worldPosition.x > bounds.max.x)
+            {
+                continue;
+            }
+
+            if (worldPosition.z < bounds.min.z || worldPosition.z > bounds.max.z)
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
     
+    private void BeginHideLoadingOverlayAfterSettle()
+    {
+        if (!showStartupLoadingScreen)
+        {
+            showLoadingOverlay = false;
+            return;
+        }
+
+        if (hideLoadingOverlayCoroutine != null)
+        {
+            StopCoroutine(hideLoadingOverlayCoroutine);
+        }
+
+        hideLoadingOverlayCoroutine = StartCoroutine(HideLoadingOverlayAfterSettle());
+    }
+
+    private IEnumerator HideLoadingOverlayAfterSettle()
+    {
+        float elapsed = 0f;
+        while (elapsed < maxGroundSettleWait && !IsPlayerSettledOnGround())
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (hideLoadingOverlayDelay > 0f)
+        {
+            yield return new WaitForSeconds(hideLoadingOverlayDelay);
+        }
+
+        showLoadingOverlay = false;
+        hideLoadingOverlayCoroutine = null;
+    }
+
+    private bool IsPlayerSettledOnGround()
+    {
+        Transform target = player != null ? player : gatedPlayer;
+        if (target == null)
+        {
+            return true;
+        }
+
+        var controller = target.GetComponent<CharacterController>();
+        if (controller != null && controller.enabled && controller.isGrounded)
+        {
+            return true;
+        }
+
+        var body = target.GetComponent<Rigidbody>();
+        if (body != null)
+        {
+            if (body.IsSleeping())
+            {
+                return true;
+            }
+
+            if (Mathf.Abs(body.velocity.y) <= 0.05f && Physics.Raycast(target.position + Vector3.up * 0.1f, Vector3.down, 0.4f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                return true;
+            }
+        }
+
+        return Physics.Raycast(target.position + Vector3.up * 0.2f, Vector3.down, 0.6f, ~0, QueryTriggerInteraction.Ignore);
+    }
+
+    private void OnGUI()
+    {
+        if (!showLoadingOverlay || !ShouldDisplayLoadingOverlay())
+        {
+            return;
+        }
+
+        var oldColor = GUI.color;
+        GUI.color = Color.black;
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 28,
+            normal = { textColor = Color.white }
+        };
+
+        GUI.Label(new Rect(0, 0, Screen.width, Screen.height), startupLoadingText, style);
+        GUI.color = oldColor;
+    }
+
+    private bool ShouldDisplayLoadingOverlay()
+    {
+        if (!showStartupLoadingScreen)
+        {
+            return false;
+        }
+
+        if (NetworkClient.active && NetworkClient.localPlayer != null && player != null)
+        {
+            return player == NetworkClient.localPlayer.transform;
+        }
+
+        return true;
+    }
+
     private void CacheMasterTerrainScene()
     {
         if (masterTerrain == null)
