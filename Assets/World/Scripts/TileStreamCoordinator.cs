@@ -120,16 +120,18 @@ public class TileStreamCoordinator : NetworkBehaviour
         TryResolvePlayerAndOfflineTarget();
         UpdateRadiusCache();
         masterDisabled = masterTerrain == null || !masterTerrain.gameObject.activeSelf;
-        
+        masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
+        firstTileLoadConfirmed = liveTiles.Count > 0;
+
         if (masterTerrain != null)
         {
             var ms = masterTerrain.gameObject.scene;
             if (ms.IsValid() && !string.IsNullOrEmpty(ms.path))
+            {
                 masterTerrainScenePath = ms.path;
+                masterSceneUnloaded = !ms.isLoaded;
+            }
         }
-        
-        masterSceneUnloaded = string.IsNullOrEmpty(masterTerrainScenePath) || !SceneManager.GetSceneByPath(masterTerrainScenePath).isLoaded;
-        firstTileLoadConfirmed = liveTiles.Count > 0;
     }
 
     private void OnValidate()
