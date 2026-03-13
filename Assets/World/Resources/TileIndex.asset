@@ -14,7 +14,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   tileSizeMeters: {x: 250, y: 250}
   originOffsetMeters: {x: 468.75, y: 468.75}
-  namespaceDuplicateCoordsByTerrainLabel: 1
   tiles:
   - coord: {x: 0, y: 0}
     terrainLabel: Terrain_East

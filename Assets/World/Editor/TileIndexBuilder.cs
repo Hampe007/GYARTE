@@ -131,31 +131,36 @@ public static class TileIndexBuilder
             return;
         }
 
-        var duplicatesByCoord = candidates
-            .GroupBy(c => c.coord)
-            .Where(g => g.Count() > 1)
-            .ToDictionary(g => g.Key, g => g.Select(v => v.path).OrderBy(p => p).ToList());
+        var duplicateCoordAndLabel = candidates
+            .GroupBy(c => (c.coord, label: c.label), (key, group) => new
+            {
+                key.coord,
+                key.label,
+                Paths = group.Select(v => v.path).OrderBy(p => p).ToList()
+            })
+            .Where(g => g.Paths.Count > 1)
+            .ToList();
 
-        if (duplicatesByCoord.Count > 0)
+        if (duplicateCoordAndLabel.Count > 0)
         {
             Debug.LogError(
-                $"[TileIndexBuilder] Found {duplicatesByCoord.Count} duplicate tile coord groups, but TileIndex.NamespaceDuplicateCoordsByTerrainLabel is disabled. " +
-                "Enable namespacing or normalize scenes to a single global coord grid before rebuilding.");
+                $"[TileIndexBuilder] Found {duplicateCoordAndLabel.Count} duplicate tile coord+terrain groups. " +
+                "Each terrain label can have only one scene per coord.");
 
-            foreach (var kv in duplicatesByCoord.Take(20))
-                Debug.LogError($"[TileIndexBuilder] Duplicate coord {kv.Key} from: {string.Join(", ", kv.Value)}");
+            foreach (var duplicate in duplicateCoordAndLabel.Take(20))
+                Debug.LogError($"[TileIndexBuilder] Duplicate coord {duplicate.coord} for terrain '{duplicate.label}' from: {string.Join(", ", duplicate.Paths)}");
 
-            if (duplicatesByCoord.Count > 20)
-                Debug.LogError($"[TileIndexBuilder] ...and {duplicatesByCoord.Count - 20} more duplicate coord groups");
+            if (duplicateCoordAndLabel.Count > 20)
+                Debug.LogError($"[TileIndexBuilder] ...and {duplicateCoordAndLabel.Count - 20} more duplicate coord+terrain groups");
 
             return;
         }
         
         var selected = candidates
-            .GroupBy(c => c.coord, (coord, group) =>
+            .GroupBy(c => (c.coord, c.label), (key, group) =>
             {
                 var preferred = group.OrderByDescending(v => v.path.Count(ch => ch == '/')).ThenBy(v => v.path).First();
-                return (coord, preferred.path, preferred.label);
+                return (key.coord, preferred.path, preferred.label);
             })
             .ToList();
 
