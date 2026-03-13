@@ -895,6 +895,15 @@ public sealed class TileSceneGenerator : ScriptableObject
                 _srcTD               = snap.data;
                 Vector3 cachedOrigin = snap.origin;
 
+                Vector2Int coordOffset = Vector2Int.zero;
+                if (sharedOriginOffset.HasValue && sharedTileSize2D.HasValue && sharedTileSize2D.Value.x > 0f && sharedTileSize2D.Value.y > 0f)
+                {
+                    coordOffset = new Vector2Int(
+                        Mathf.RoundToInt((cachedOrigin.x - sharedOriginOffset.Value.x) / sharedTileSize2D.Value.x),
+                        Mathf.RoundToInt((cachedOrigin.z - sharedOriginOffset.Value.y) / sharedTileSize2D.Value.y)
+                    );
+                }
+
                 string perTerrainOutputRoot = subfolderPerTerrain
                     ? NormalizeAssetPath($"{originalOutputRoot}/{_currentTerrainLabel}")
                     : originalOutputRoot;
@@ -1739,7 +1748,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     private void LogError(string message) => Debug.LogError(WithPrefix(message));
 
     // -------- core slicing (uses only cached data) --------
-    private List<TileIndex.TileRecord> RunSliceOrReslice(Vector3 cachedOrigin)
+    private List<TileIndex.TileRecord> RunSliceOrReslice(Vector3 cachedOrigin, Vector2Int coordOffset = default)
     {
         ValidateResolutionDivisibility();
 
@@ -1909,7 +1918,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
                             tempIndexRecords.Add(new TileIndex.TileRecord
                             {
-                                coord = new Vector2Int(tx, ty),
+                                coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
                                 scenePath = tileScenePath,
                                 worldBounds = new Bounds(boundsCenter, boundsSize),
                                 worldOrigin = tileOrigin,
@@ -1957,7 +1966,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
                         tempIndexRecords.Add(new TileIndex.TileRecord
                         {
-                            coord = new Vector2Int(tx, ty),
+                            coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
                             scenePath = tileScenePath,
                             worldBounds = new Bounds(boundsCenter, boundsSize),
                             worldOrigin = tileOrigin,
@@ -2021,6 +2030,21 @@ public sealed class TileSceneGenerator : ScriptableObject
         {
             throw new InvalidOperationException(
                 $"[TileSceneGenerator] TileIndex validation failed: {inconsistentBounds} tile(s) have mismatched worldBounds.center/worldOrigin/tileSize."
+            );
+        }
+
+            var duplicatePaths = settings.tileIndex.Tiles
+        .GroupBy(r => r.scenePath, StringComparer.OrdinalIgnoreCase)
+        .Where(g => g.Count() > 1)
+        .Select(g => g.Key)
+        .ToList();
+
+        if (duplicatePaths.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"[TileSceneGenerator] TileIndex validation failed: duplicate scene paths detected " +
+                $"({duplicatePaths.Count}): {string.Join(", ", duplicatePaths)}\n" +
+                "This usually means two terrains produced tiles with the same name. Check sceneNamePattern and subfolderPerTerrain settings."
             );
         }
 
