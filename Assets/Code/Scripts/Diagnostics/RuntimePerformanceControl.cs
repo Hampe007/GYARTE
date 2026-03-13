@@ -5,6 +5,7 @@ public class RuntimePerformanceControl : MonoBehaviour
     [Header("References")]
     [SerializeField] private TileStreamCoordinator streaming;   // from your scene
     [SerializeField] private PerformanceLogger perfLogger;       // optional
+    [SerializeField] private PerformanceOverlay performanceOverlay;
     [SerializeField] private GameObject[] globalPropGroups;      // trees, rocks, villages etc.
     [SerializeField] private Terrain targetTerrain;              // optional, for layer toggles
 
@@ -12,6 +13,7 @@ public class RuntimePerformanceControl : MonoBehaviour
     [SerializeField] private bool streamingEnabled = true;
     [SerializeField] private bool propsEnabled = true;
     [SerializeField] private bool terrainTexturesEnabled = true;
+    [SerializeField] private bool showPerformanceStats = true;
 
     void Start()
     {
@@ -23,6 +25,7 @@ public class RuntimePerformanceControl : MonoBehaviour
         ApplyStreaming();
         ApplyProps();
         ApplyTerrainLayers();
+        ApplyPerformanceOverlayVisibility();
     }
 
     public void SetStreaming(bool value)
@@ -43,6 +46,12 @@ public class RuntimePerformanceControl : MonoBehaviour
         ApplyTerrainLayers();
     }
 
+    public void SetPerformanceStats(bool value)
+    {
+        showPerformanceStats = value;
+        ApplyPerformanceOverlayVisibility();
+    }
+
     private void ApplyStreaming()
     {
         if (streaming == null) return;
@@ -52,7 +61,7 @@ public class RuntimePerformanceControl : MonoBehaviour
             streaming.enabled = false;
             return;
         }
-        
+
         // If off → force unload everything and stop scanning
         if (!streamingEnabled)
         {
@@ -91,30 +100,60 @@ public class RuntimePerformanceControl : MonoBehaviour
 
         }
     }
-    
+
+    private void ApplyPerformanceOverlayVisibility()
+    {
+        if (performanceOverlay == null)
+        {
+            return;
+        }
+
+        bool loadingScreenVisible = streaming != null && streaming.IsStartupLoadingOverlayVisible;
+        performanceOverlay.visible = showPerformanceStats && !loadingScreenVisible;
+    }
+
+    void Update()
+    {
+        ApplyPerformanceOverlayVisibility();
+    }
+
     void OnGUI()
     {
-        GUI.Box(new Rect(15, 15, 220, 130), "Perf Control");
+        GUI.Box(new Rect(15, 15, 260, 165), "Perf Control");
 
         bool streamingLocked = streaming != null && streaming.StreamingLocked;
 
         bool previousEnabled = GUI.enabled;
         GUI.enabled = !streamingLocked;
-        
-        if (GUI.Button(new Rect(25, 45, 200, 25), streamingEnabled ? "Disable Streaming" : "Enable Streaming"))
+
+        if (GUI.Button(new Rect(25, 45, 240, 25), streamingEnabled ? "Disable Streaming" : "Enable Streaming"))
             SetStreaming(!streamingEnabled);
 
         GUI.enabled = previousEnabled;
 
         if (streamingLocked)
         {
-            GUI.Label(new Rect(25, 45, 200, 40), "Tile streaming disabled\nfor this session.");
+            GUI.Label(new Rect(25, 45, 240, 40), "Tile streaming disabled\nfor this session.");
         }
-        
-        if (GUI.Button(new Rect(25, 75, 200, 25), propsEnabled ? "Disable Props" : "Enable Props"))
+
+        if (GUI.Button(new Rect(25, 75, 240, 25), propsEnabled ? "Disable Props" : "Enable Props"))
             SetProps(!propsEnabled);
 
-        if (GUI.Button(new Rect(25, 105, 200, 25), terrainTexturesEnabled ? "Textures: ON (click to disable)" : "Textures: OFF (click to enable)"))
+        if (GUI.Button(new Rect(25, 105, 240, 25), terrainTexturesEnabled ? "Textures: ON (click to disable)" : "Textures: OFF (click to enable)"))
             SetTerrainTextures(!terrainTexturesEnabled);
+
+        bool loadingScreenVisible = streaming != null && streaming.IsStartupLoadingOverlayVisible;
+        string perfButtonLabel;
+        if (loadingScreenVisible)
+        {
+            perfButtonLabel = "Performance Stats: HIDDEN (loading)";
+        }
+        else
+        {
+            perfButtonLabel = showPerformanceStats ? "Performance Stats: ON" : "Performance Stats: OFF";
+        }
+
+        if (GUI.Button(new Rect(25, 135, 240, 25), perfButtonLabel))
+            SetPerformanceStats(!showPerformanceStats);
     }
 }
