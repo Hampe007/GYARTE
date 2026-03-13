@@ -1919,12 +1919,13 @@ public sealed class TileSceneGenerator : ScriptableObject
                             tempIndexRecords.Add(new TileIndex.TileRecord
                             {
                                 coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
+                                terrainLabel = _currentTerrainLabel,
                                 scenePath = tileScenePath,
-                                worldBounds = new Bounds(boundsCenter, boundsSize),
+                                worldBounds = tileBounds,
                                 worldOrigin = tileOrigin,
                                 tileSize = tileSize,
-                                propRootName = TileRuntimeConstants.PropRootPrefix + tx + "_" + ty,
-                                propDataPath = propAssetPath
+                                propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
+                                propDataPath = propDataPath
                             });
                         }
                         finally
@@ -2637,22 +2638,15 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private static Vector2Int ComputeGlobalGridDimensions(List<TileSliceSettings.PerTerrain> results)
     {
-        if (results == null || results.Count == 0)
-            return Vector2Int.one;
-
-        int maxX = 1;
+        int totalX = 0;
         int maxY = 1;
-
         foreach (var result in results)
         {
-            if (result == null)
-                continue;
-
-            maxX = Mathf.Max(maxX, result.tilesX);
+            if (result == null) continue;
+            totalX += result.tilesX;
             maxY = Mathf.Max(maxY, result.tilesY);
         }
-
-        return new Vector2Int(maxX, maxY);
+        return new Vector2Int(Mathf.Max(1, totalX), maxY);
     }
 
     private static TileGridMetadata EnsureGridMetadataAsset()
