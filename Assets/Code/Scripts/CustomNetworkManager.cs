@@ -148,7 +148,27 @@ public class CustomNetworkManager : NetworkManager
 
     public override void OnServerDisconnect(NetworkConnectionToClient conn)
     {
+        if (conn == null)
+        {
+            return;
+        }
+
         _connToSteam.Remove(conn.connectionId);
+
+        if (conn.identity != null)
+        {
+            var playerObj = conn.identity.GetComponent<PlayerObjectController>();
+            if (playerObj != null)
+            {
+                GamePlayers.Remove(playerObj);
+            }
+        }
+
+        if (!NetworkServer.active)
+        {
+            return;
+        }
+
         base.OnServerDisconnect(conn);
     }
 

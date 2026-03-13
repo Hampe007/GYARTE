@@ -424,8 +424,31 @@ public class TileStreamCoordinator : NetworkBehaviour
         
         if (clientLoaded.Count > 0)
         {
-            StartCoroutine(UnloadAllTiles(clientLoaded, isServer: false));
+            UnloadAllTilesWithoutCoroutine(clientLoaded);
         }
+
+        if (serverLoaded.Count > 0)
+        {
+            UnloadAllTilesWithoutCoroutine(serverLoaded);
+        }
+    }
+
+    private void UnloadAllTilesWithoutCoroutine(HashSet<string> tiles)
+    {
+        var paths = tiles.ToList();
+        foreach (var path in paths)
+        {
+            UnwireNeighbors(path);
+            liveTiles.Remove(path);
+
+            var scene = SceneManager.GetSceneByPath(path);
+            if (scene.IsValid() && scene.isLoaded)
+            {
+                SceneManager.UnloadSceneAsync(scene);
+            }
+        }
+
+        tiles.Clear();
     }
 
     // Add the offline loop (local client-side streaming)
