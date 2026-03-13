@@ -20,7 +20,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
     [Header("Look")]
     [SerializeField] private Transform cameraPivot;
     [SerializeField] private float lookSensitivity = 2f;
-    [SerializeField, Min(0f)] private float lookDeadzone = 0.01f;
+    [SerializeField, Min(0f)] private float lookDeadzone = 0.0001f;
     [SerializeField] private Vector2 pitchLimits = new Vector2(-75f, 80f);
 
     [Header("Cinemachine (Optional)")]
@@ -150,22 +150,19 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
     private void HandleLook()
     {
-        if (!_isMouseLookEnabled || Cursor.lockState != CursorLockMode.Locked)
+        if (!_isMouseLookEnabled)
             return;
 
-        float rawMouseX = Input.GetAxisRaw("Mouse X");
-        float rawMouseY = Input.GetAxisRaw("Mouse Y");
+        float mouseX = Input.GetAxisRaw("Mouse X") * lookSensitivity;
+        float mouseY = Input.GetAxisRaw("Mouse Y") * lookSensitivity;
 
-        if (Mathf.Abs(rawMouseX) < lookDeadzone)
-            rawMouseX = 0f;
-        if (Mathf.Abs(rawMouseY) < lookDeadzone)
-            rawMouseY = 0f;
+        if (Mathf.Abs(mouseX) < lookDeadzone)
+            mouseX = 0f;
+        if (Mathf.Abs(mouseY) < lookDeadzone)
+            mouseY = 0f;
 
-        if (rawMouseX == 0f && rawMouseY == 0f)
+        if (mouseX == 0f && mouseY == 0f)
             return;
-
-        float mouseX = rawMouseX * lookSensitivity;
-        float mouseY = rawMouseY * lookSensitivity;
 
         _yaw += mouseX;
         _pitch = Mathf.Clamp(_pitch - mouseY, pitchLimits.x, pitchLimits.y);
