@@ -1,4 +1,4 @@
-// Fixed overlay in the top-left corner, non-draggable.
+// Fixed overlay in the top-right corner, non-draggable.
 
 using System;
 using UnityEngine;
@@ -14,16 +14,16 @@ public interface IStreamStats
 public class PerformanceOverlay : MonoBehaviour
 {
     private KeyCode toggleKey = KeyCode.F1;
-    private Vector2 position = new Vector2(0, 0);
+    private Vector2 margin = new (8f, 8f);
     public bool visible = true;
     public float scale = 3f;
 
-    private float _emaDt = 0.0167f;
+    private float emaDt = 0.0167f;
     private const float EmaAlpha = 0.1f;
     private const int HistSize = 600;
-    private readonly float[] _dtHist = new float[HistSize];
-    private int _histIndex;
-    private float _p99FrameMs;
+    private readonly float[] dtHist = new float[HistSize];
+    private int histIndex;
+    private float p99FrameMs;
 
     public IStreamStats streamStats;
     public Func<int> getActiveTiles;
@@ -32,10 +32,10 @@ public class PerformanceOverlay : MonoBehaviour
 
     void Awake()
     {
-        for (int i = 0; i < _dtHist.Length; i++) _dtHist[i] = _emaDt;
+        for (int i = 0; i < dtHist.Length; i++) dtHist[i] = emaDt;
         if (streamStats == null)
         {
-            foreach (var behaviour in FindObjectsOfType<MonoBehaviour>(true))
+            foreach (var behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.InstanceID))
             {
                 if (behaviour is IStreamStats stats)
                 {
@@ -51,12 +51,12 @@ public class PerformanceOverlay : MonoBehaviour
         if (Input.GetKeyDown(toggleKey))
             visible = !visible;
 
-        _emaDt = Mathf.Lerp(_emaDt, Time.unscaledDeltaTime, EmaAlpha);
-        _dtHist[_histIndex] = Time.unscaledDeltaTime;
-        _histIndex = (_histIndex + 1) % HistSize;
+        emaDt = Mathf.Lerp(emaDt, Time.unscaledDeltaTime, EmaAlpha);
+        dtHist[histIndex] = Time.unscaledDeltaTime;
+        histIndex = (histIndex + 1) % HistSize;
 
         if (Time.frameCount % 15 == 0)
-            _p99FrameMs = PercentileMs(_dtHist, 0.99f);
+            p99FrameMs = PercentileMs(dtHist, 0.99f);
     }
 
     void OnGUI()
@@ -66,19 +66,24 @@ public class PerformanceOverlay : MonoBehaviour
         var prevMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
 
-        var rect = new Rect(position.x, position.y, 380, 100);
+        float scaledScreenWidth = Screen.width / scale;
+        float rectWidth = 380f;
+        float rectHeight = 100f;
+        float x = scaledScreenWidth - rectWidth - margin.x;
+        float y = margin.y;
+        var rect = new Rect(x, y, rectWidth, rectHeight);
         GUILayout.BeginArea(rect, GUI.skin.box);
 
-        float fps = 1f / Mathf.Max(_emaDt, 1e-5f);
-        float frameMs = _emaDt * 1000f;
+        float fps = 1f / Mathf.Max(emaDt, 1e-5f);
+        float frameMs = emaDt * 1000f;
 
         long monoUsed = Profiler.GetMonoUsedSizeLong();
         long totalAlloc = Profiler.GetTotalAllocatedMemoryLong();
         long totalReserved = Profiler.GetTotalReservedMemoryLong();
 
-        float monoMB = monoUsed / (1024f * 1024f);
-        float allocMB = totalAlloc / (1024f * 1024f);
-        float reservedMB = totalReserved / (1024f * 1024f);
+        float monoMb = monoUsed / (1024f * 1024f);
+        float allocMb = totalAlloc / (1024f * 1024f);
+        float reservedMb = totalReserved / (1024f * 1024f);
 
         int activeTiles = streamStats != null ? streamStats.ActiveTiles :
                           (getActiveTiles != null ? getActiveTiles() : -1);
@@ -87,8 +92,8 @@ public class PerformanceOverlay : MonoBehaviour
         int loadsThisFrame = streamStats != null ? streamStats.LoadsThisFrame :
                              (getLoadsThisFrame != null ? getLoadsThisFrame() : 0);
 
-        GUILayout.Label($"FPS: {fps:0.0} | Frame: {frameMs:0.0} ms | P99: {_p99FrameMs:0.0} ms");
-        GUILayout.Label($"RAM Alloc: {allocMB:0.0} MB | Reserved: {reservedMB:0.0} MB | Mono: {monoMB:0.0} MB");
+        GUILayout.Label($"FPS: {fps:0.0} | Frame: {frameMs:0.0} ms | P99: {p99FrameMs:0.0} ms");
+        GUILayout.Label($"RAM Alloc: {allocMb:0.0} MB | Reserved: {reservedMb:0.0} MB | Mono: {monoMb:0.0} MB");
 
         if (activeTiles >= 0)
             GUILayout.Label($"Tiles Active: {activeTiles} | Queued: {queuedLoads} | Loads/frame: {loadsThisFrame}");

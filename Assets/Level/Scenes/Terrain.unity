@@ -400755,7 +400755,7 @@ MonoBehaviour:
   index: {fileID: 11400000, guid: 4d1f91b12d2cee540904b4b32c58e8f0, type: 2}
   gridMetadata: {fileID: 11400000, guid: 61c2890a5c88e3c449c7816aafaeeaf3, type: 2}
   player: {fileID: 0}
-  loadRadius: 500
+  loadRadius: 200
   edgeBuffer: 25
   scanInterval: 0.5
   logActions: 1
@@ -400767,6 +400767,11 @@ MonoBehaviour:
   disableMasterOnStart: 1
   unloadMasterTerrainScene: 1
   unloadAllTerrainScenesOnStart: 1
+  gatePlayerUntilTileReady: 1
+  showStartupLoadingScreen: 1
+  startupLoadingText: Loading world...
+  hideLoadingOverlayDelay: 0.2
+  maxGroundSettleWait: 2
 --- !u!4 &1868536485
 Transform:
   m_ObjectHideFlags: 0

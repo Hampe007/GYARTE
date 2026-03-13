@@ -604,7 +604,7 @@ public class TileStreamCoordinator : NetworkBehaviour
             gatedRigidbody.useGravity = false;
             gatedRigidbody.isKinematic = true;
             gatedRigidbody.constraints = RigidbodyConstraints.FreezeAll;
-            gatedRigidbody.velocity = Vector3.zero;
+            gatedRigidbody.linearVelocity = Vector3.zero;
             gatedRigidbody.angularVelocity = Vector3.zero;
         }
 
@@ -723,7 +723,7 @@ public class TileStreamCoordinator : NetworkBehaviour
                 return true;
             }
 
-            if (Mathf.Abs(body.velocity.y) <= 0.05f && Physics.Raycast(target.position + Vector3.up * 0.1f, Vector3.down, 0.4f, ~0, QueryTriggerInteraction.Ignore))
+            if (Mathf.Abs(body.linearVelocity.y) <= 0.05f && Physics.Raycast(target.position + Vector3.up * 0.1f, Vector3.down, 0.4f, ~0, QueryTriggerInteraction.Ignore))
             {
                 return true;
             }
