@@ -65,7 +65,13 @@ public class PlayerMovementController : NetworkBehaviour
 
     // Input actions from the new Input System
     private InputAction moveAction;
-    private InputAction lookAction;      // Not used directly anymore, Cinemachine reads this.
+    private InputAction lookAction;      // Used by Cinemachine via input provider.
+
+    [Header("Mouse Look / Cursor")]
+    [Tooltip("Small look input values below this threshold are ignored to prevent drift.")]
+    public float lookDeadzone = 0.01f;
+
+    private bool isMouseLookEnabled;
     private InputAction jumpAction;
     private InputAction walkAction;
     private InputAction sprintAction;
@@ -119,11 +125,12 @@ public class PlayerMovementController : NetworkBehaviour
 
         // Enable actions if they exist
         moveAction?.Enable();
-        lookAction?.Enable();
         jumpAction?.Enable();
         walkAction?.Enable();
         sprintAction?.Enable();
         crouchAction?.Enable();
+
+        SetCursorCaptured(true);
     }
 
     private void Update()
@@ -147,22 +154,40 @@ public class PlayerMovementController : NetworkBehaviour
             return;
         }
 
+        HandleCursorLockToggle();
         HandleLook();
         HandleMovement();
     }
 
     /// <summary>
-    /// When using Cinemachine, we do not manually rotate the camera or player from Look here.
-    /// CinemachineInputProvider reads the Look action for us and rotates the camera.
+    /// Rotates the player toward camera yaw. Camera look input is driven by Cinemachine via lookAction.
     /// </summary>
     private void HandleLook()
     {
-        // When using Cinemachine, we rotate the player to match the camera's yaw.
-        // The camera itself is already being rotated by CinemachineInputProvider using the Look input.
+        if (!isMouseLookEnabled)
+        {
+            return;
+        }
+
+        // Ignore tiny/noisy look deltas so the camera does not drift while mouse is idle.
+        Vector2 lookInput = lookAction != null ? lookAction.ReadValue<Vector2>() : Vector2.zero;
+        if (Mathf.Abs(lookInput.x) < lookDeadzone)
+        {
+            lookInput.x = 0f;
+        }
+
+        if (Mathf.Abs(lookInput.y) < lookDeadzone)
+        {
+            lookInput.y = 0f;
+        }
+
+        if (lookInput == Vector2.zero)
+        {
+            return;
+        }
 
         if (playerCameraTransform == null)
         {
-            // Try to auto-assign main camera as a fallback
             if (Camera.main == null)
             {
                 return;
@@ -171,7 +196,6 @@ public class PlayerMovementController : NetworkBehaviour
             playerCameraTransform = Camera.main.transform;
         }
 
-        // Get camera forward on the horizontal plane
         Vector3 cameraForward = playerCameraTransform.forward;
         cameraForward.y = 0f;
         cameraForward.Normalize();
@@ -181,11 +205,53 @@ public class PlayerMovementController : NetworkBehaviour
             return;
         }
 
-        // Rotate the player to look where the camera looks (yaw only)
         Quaternion targetRotation = Quaternion.LookRotation(cameraForward, Vector3.up);
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
     }
 
+    private void HandleCursorLockToggle()
+    {
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            SetCursorCaptured(false);
+            return;
+        }
+
+        if (!isMouseLookEnabled && Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            SetCursorCaptured(true);
+        }
+    }
+
+    private void SetCursorCaptured(bool captured)
+    {
+        isMouseLookEnabled = captured;
+        Cursor.lockState = captured ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !captured;
+
+        if (lookAction == null)
+        {
+            return;
+        }
+
+        if (captured)
+        {
+            if (!lookAction.enabled)
+            {
+                lookAction.Enable();
+            }
+        }
+        else if (lookAction.enabled)
+        {
+            lookAction.Disable();
+        }
+    }
+
+
+    private void OnDisable()
+    {
+        SetCursorCaptured(false);
+    }
 
     private void HandleMovement()
     {
