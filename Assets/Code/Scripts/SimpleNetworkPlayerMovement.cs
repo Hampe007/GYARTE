@@ -20,6 +20,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
     [Header("Look")]
     [SerializeField] private Transform cameraPivot;
     [SerializeField] private float lookSensitivity = 2f;
+    [SerializeField, Min(0f)] private float lookDeadzone = 0.0001f;
     [SerializeField] private Vector2 pitchLimits = new Vector2(-75f, 80f);
 
     [Header("Cinemachine (Optional)")]
@@ -43,6 +44,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
     private int _initialCameraPriority;
     private bool _capturedInitialPriority;
     private CinemachineVirtualCameraBase[] _allVirtualCameras;
+    private bool _isMouseLookEnabled;
 
     private void Awake()
     {
@@ -104,6 +106,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             return;
 
         EnsureLocalCamera();
+        HandleCursorLockToggle();
         CacheInput();
         HandleLook();
     }
@@ -147,8 +150,19 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
     private void HandleLook()
     {
-        float mouseX = Input.GetAxis("Mouse X") * lookSensitivity;
-        float mouseY = Input.GetAxis("Mouse Y") * lookSensitivity;
+        if (!_isMouseLookEnabled)
+            return;
+
+        float mouseX = Input.GetAxisRaw("Mouse X") * lookSensitivity;
+        float mouseY = Input.GetAxisRaw("Mouse Y") * lookSensitivity;
+
+        if (Mathf.Abs(mouseX) < lookDeadzone)
+            mouseX = 0f;
+        if (Mathf.Abs(mouseY) < lookDeadzone)
+            mouseY = 0f;
+
+        if (mouseX == 0f && mouseY == 0f)
+            return;
 
         _yaw += mouseX;
         _pitch = Mathf.Clamp(_pitch - mouseY, pitchLimits.x, pitchLimits.y);
@@ -156,6 +170,18 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
         transform.rotation = Quaternion.Euler(0f, _yaw, 0f);
         if (cameraPivot != null)
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+    }
+
+    private void HandleCursorLockToggle()
+    {
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            SetCursorCaptured(false);
+            return;
+        }
+
+        if (!_isMouseLookEnabled && Input.GetMouseButtonDown(0))
+            SetCursorCaptured(true);
     }
 
     private void Simulate(Vector2 moveInput, bool sprint, bool jump, float dt, ref float verticalVelocity)
@@ -247,9 +273,7 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
 
         _cinemachineActive = true;
         
-        // Lock and hide cursor
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        SetCursorCaptured(true);
     }
 
     private void DeactivateLocalCamera()
@@ -268,9 +292,14 @@ public sealed class SimpleNetworkPlayerMovement : NetworkBehaviour
             DetachFallbackCamera();
         }
         
-        // Unlock and show cursor
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        SetCursorCaptured(false);
+    }
+
+    private void SetCursorCaptured(bool captured)
+    {
+        _isMouseLookEnabled = captured;
+        Cursor.lockState = captured ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !captured;
     }
 
     private Transform GetDefaultFollowTarget()
