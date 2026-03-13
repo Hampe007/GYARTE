@@ -927,7 +927,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                     r.origin = cachedOrigin; 
                     EditorUtility.SetDirty(settings);
                 }
-                var terrainRecords = RunSliceOrReslice(cachedOrigin);
+                var terrainRecords = RunSliceOrReslice(cachedOrigin, cordOffset);
                 allTileIndexRecords.AddRange(terrainRecords);
                 expectedTileCount += tilesX * tilesY;
 
