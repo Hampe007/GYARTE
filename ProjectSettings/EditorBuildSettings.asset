@@ -996,5 +996,6 @@ EditorBuildSettings:
     path: Assets/TileS/Terrain_West/Scenes/Terrain_West_A16.unity
     guid: 631ecaaf04e13b7458dd91cbea50beaf
   m_configObjects:
+    com.unity.input.settings: {fileID: 11400000, guid: 5f1dbb81bb0ee7340bcc1dd517bc7246, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 84b788bc253427349ba5f42115231756, type: 3}
   m_UseUCBPForAssetBundles: 0

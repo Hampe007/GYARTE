@@ -254,12 +254,6 @@ public class PlayerMovementController : NetworkBehaviour
         }
     }
 
-
-    private void OnDisable()
-    {
-        SetCursorCaptured(false);
-    }
-
     private void HandleMovement()
     {
         if (!CanProcessMovement())
@@ -395,6 +389,7 @@ public class PlayerMovementController : NetworkBehaviour
     private void OnDisable()
     {
         StopMovementState();
+        SetCursorCaptured(false);
     }
 
     private void OnDestroy()
