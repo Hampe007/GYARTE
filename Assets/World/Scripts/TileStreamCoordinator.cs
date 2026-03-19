@@ -163,6 +163,25 @@ public class TileStreamCoordinator : NetworkBehaviour
     public TileGridMetadata GridMetadata => gridMetadata;
     public Transform CurrentStreamingTarget => player != null ? player : offlineTarget;
 
+    public IEnumerable<string> GetActiveTilePaths()
+    {
+        var source = NetworkServer.active && !NetworkClient.active ? serverLoaded : clientLoaded;
+        foreach (var path in source)
+        {
+            yield return path;
+        }
+    }
+
+    public bool IsTileActive(string scenePath)
+    {
+        if (string.IsNullOrEmpty(scenePath))
+        {
+            return false;
+        }
+
+        return (NetworkServer.active && !NetworkClient.active ? serverLoaded : clientLoaded).Contains(scenePath);
+    }
+
     private void ResolveGridMetadataAndIndex()
     {
         if (gridMetadata == null)
