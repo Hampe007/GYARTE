@@ -161,6 +161,7 @@ public class TileStreamCoordinator : NetworkBehaviour
     }
 
     public TileGridMetadata GridMetadata => gridMetadata;
+    public Transform CurrentStreamingTarget => player != null ? player : offlineTarget;
 
     private void ResolveGridMetadataAndIndex()
     {
