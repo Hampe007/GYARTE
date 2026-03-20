@@ -29,16 +29,16 @@ public static class TileIndexBuilder
         public readonly string TerrainLabel;
         public readonly bool HasTerrain;
         public readonly Vector3 TerrainPosition;
-        public readonly float TerrainHeight;
+        public readonly Vector3 TerrainSize;
 
-        public TileBuildSource(Vector2Int coord, string path, string terrainLabel, bool hasTerrain, Vector3 terrainPosition, float terrainHeight)
+        public TileBuildSource(Vector2Int coord, string path, string terrainLabel, bool hasTerrain, Vector3 terrainPosition, Vector3 terrainSize)
         {
             Coord = coord;
             Path = path;
             TerrainLabel = terrainLabel;
             HasTerrain = hasTerrain;
             TerrainPosition = terrainPosition;
-            TerrainHeight = terrainHeight;
+            TerrainSize = terrainSize;
         }
 
         public Vector2 CandidateOriginOffset(Vector2 tileSize)
@@ -177,12 +177,12 @@ public static class TileIndexBuilder
 
                 if (terrain != null)
                 {
-                    float terrainHeight = terrain.terrainData != null ? terrain.terrainData.size.y : 0f;
-                    sources.Add(new TileBuildSource(entry.coord, entry.path, entry.label, true, terrain.transform.position, terrainHeight));
+                    Vector3 terrainSize = terrain.terrainData != null ? terrain.terrainData.size : new Vector3(size.x, 0f, size.y);
+                    sources.Add(new TileBuildSource(entry.coord, entry.path, entry.label, true, terrain.transform.position, terrainSize));
                 }
                 else
                 {
-                    sources.Add(new TileBuildSource(entry.coord, entry.path, entry.label, false, Vector3.zero, 0f));
+                    sources.Add(new TileBuildSource(entry.coord, entry.path, entry.label, false, Vector3.zero, new Vector3(size.x, 0f, size.y)));
                 }
             }
         }
@@ -193,12 +193,14 @@ public static class TileIndexBuilder
         var records = new List<TileIndex.TileRecord>(sources.Count);
         foreach (var source in sources)
         {
-            float verticalExtent = Mathf.Max(size.x, DefaultVerticalPadding);
-            if (source.HasTerrain)
-                verticalExtent = Mathf.Max(verticalExtent, source.TerrainHeight * 0.5f);
+            Vector3 terrainSize = source.HasTerrain ? source.TerrainSize : new Vector3(size.x, 0f, size.y);
+            float verticalExtent = Mathf.Max(Mathf.Max(terrainSize.x, terrainSize.z), DefaultVerticalPadding);
+            verticalExtent = Mathf.Max(verticalExtent, terrainSize.y * 0.5f);
 
-            var tileSize = new Vector3(size.x, verticalExtent * 2f, size.y);
-            var worldOrigin = new Vector3(source.Coord.x * size.x + originOffset.x, 0f, source.Coord.y * size.y + originOffset.y);
+            var tileSize = new Vector3(Mathf.Max(1f, terrainSize.x), verticalExtent * 2f, Mathf.Max(1f, terrainSize.z));
+            var worldOrigin = source.HasTerrain
+                ? new Vector3(source.TerrainPosition.x, 0f, source.TerrainPosition.z)
+                : new Vector3(source.Coord.x * size.x + originOffset.x, 0f, source.Coord.y * size.y + originOffset.y);
             var bounds = new Bounds(worldOrigin + tileSize * 0.5f, tileSize);
 
             string propDataPath = string.Empty;
@@ -243,18 +245,19 @@ public static class TileIndexBuilder
 
     private static Vector2 ResolveGlobalOriginOffset(IEnumerable<TileBuildSource> sources, Vector2 tileSize, Vector2 fallback)
     {
-        var offsets = sources.Where(s => s.HasTerrain).Select(s => s.CandidateOriginOffset(tileSize)).ToList();
-        if (offsets.Count == 0)
+        var terrainSources = sources.Where(s => s.HasTerrain).ToList();
+        if (terrainSources.Count == 0)
             return fallback;
 
-        var resolved = new Vector2(
-            ResolveAxisOrigin(offsets.Select(v => v.x).ToList(), fallback.x),
-            ResolveAxisOrigin(offsets.Select(v => v.y).ToList(), fallback.y));
+        float minX = terrainSources.Min(s => s.TerrainPosition.x);
+        float minZ = terrainSources.Min(s => s.TerrainPosition.z);
+        var resolved = new Vector2(minX, minZ);
 
+        var offsets = terrainSources.Select(s => s.CandidateOriginOffset(tileSize)).ToList();
         float toleranceSqr = OriginClusteringToleranceMeters * OriginClusteringToleranceMeters;
         int disagreements = offsets.Count(v => (v - resolved).sqrMagnitude > toleranceSqr);
         if (disagreements > 0)
-            Debug.LogWarning($"[TileIndexBuilder] {disagreements} tile(s) disagree with resolved global origin {resolved} by more than {OriginClusteringToleranceMeters:0.###}m. Using deterministic median-derived origin.");
+            Debug.LogWarning($"[TileIndexBuilder] Legacy global origin offsets disagree across {disagreements} tile(s); using world-min origin {resolved} for debug/reference output while per-record bounds drive streaming.");
 
         return resolved;
     }
