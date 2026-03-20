@@ -67,6 +67,32 @@ public class SpawnPointManager : MonoBehaviour
         return ToPose(spawns[fallback]);
     }
 
+    public bool TryGetNearestSpawn(Vector3 worldPosition, out int index, out SpawnPose spawn)
+    {
+        index = -1;
+        spawn = default;
+        if (!HasPoints)
+        {
+            return false;
+        }
+
+        float bestDistance = float.PositiveInfinity;
+        for (int i = 0; i < spawns.Count; i++)
+        {
+            float distance = (spawns[i].position - worldPosition).sqrMagnitude;
+            if (distance >= bestDistance)
+            {
+                continue;
+            }
+
+            bestDistance = distance;
+            index = i;
+            spawn = spawns[i];
+        }
+
+        return index >= 0;
+    }
+
     private static (Vector3, Quaternion) ToPose(in SpawnPose s)
         => (s.position, Quaternion.Euler(0f, s.yaw, 0f));
 
