@@ -10,6 +10,19 @@ using UnityEditor;
 
 public class TileStreamCoordinator : NetworkBehaviour
 {
+    public enum ClientStreamingStrategy
+    {
+        LocalClient = 0,
+        ServerUnion = 1,
+        TargetedServer = 2
+    }
+
+    public enum TileSelectionMode
+    {
+        Radius = 0,
+        SymmetricWindow = 1
+    }
+
     [Header("Configuration")]
     public TileIndex index;
     [SerializeField] private TileGridMetadata gridMetadata;
@@ -18,6 +31,11 @@ public class TileStreamCoordinator : NetworkBehaviour
     [SerializeField] private float edgeBuffer = 25f;
     public float scanInterval = 0.5f;
     public bool logActions;
+    [SerializeField] private ClientStreamingStrategy clientStreamingStrategy = ClientStreamingStrategy.LocalClient;
+    [SerializeField] private TileSelectionMode tileSelectionMode = TileSelectionMode.Radius;
+    [SerializeField, Min(0)] private int symmetricTileWindowRadius = 1;
+    [SerializeField] private bool verboseDebugLogging;
+    [SerializeField] private bool showDebugOverlay;
 
     private readonly HashSet<string> serverLoaded = new();
     private readonly HashSet<string> clientLoaded = new();
@@ -32,6 +50,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private Coroutine serverLoop;
     private Coroutine clientApplyCoroutine;
+    private Coroutine clientLoop;
     
     public bool offlineStandalone = true;
     
@@ -94,6 +113,9 @@ public class TileStreamCoordinator : NetworkBehaviour
     private Coroutine masterEnsureCoroutine;
     
     private Coroutine resolvePlayerLoop;
+    private float nextDebugLogTime;
+    private string lastDebugSummary = string.Empty;
+    private string lastSelectionSummary = string.Empty;
 
     public override void OnStartServer()
     {
@@ -102,6 +124,23 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             serverLoop = StartCoroutine(ServerLoop());
         }
+    }
+
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+        EnsureClientLoopState();
+    }
+
+    public override void OnStopClient()
+    {
+        if (clientLoop != null)
+        {
+            StopCoroutine(clientLoop);
+            clientLoop = null;
+        }
+
+        base.OnStopClient();
     }
 
     public override void OnStopServer()
@@ -162,6 +201,11 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     public TileGridMetadata GridMetadata => gridMetadata;
     public Transform CurrentStreamingTarget => player != null ? player : offlineTarget;
+    public ClientStreamingStrategy CurrentClientStreamingStrategy => clientStreamingStrategy;
+    public TileSelectionMode CurrentTileSelectionMode => tileSelectionMode;
+    public string StreamingModeDescription => GetStreamingModeDescription();
+    public string TileSelectionModeDescription => tileSelectionMode == TileSelectionMode.Radius ? "radius-based" : $"symmetric-window ({symmetricTileWindowRadius} ring(s))";
+    public string DebugSummary => lastDebugSummary;
 
     public IEnumerable<string> GetActiveTilePaths()
     {
@@ -261,49 +305,20 @@ public class TileStreamCoordinator : NetworkBehaviour
             tempPlayerPositions.Add(position);
         }
 
-        streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, serverLoaded, desiredTiles);
+        streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, serverLoaded, desiredTiles, tileSelectionMode, symmetricTileWindowRadius);
+        lastSelectionSummary = DescribeSceneSet(desiredTiles);
+        yield return ApplySceneDelta(serverLoaded, desiredTiles, true);
 
-        if (desiredTiles.SetEquals(serverLoaded))
+        if (verboseDebugLogging)
         {
-            ServerQueuedLoads = 0;
-            yield break;
-        }
-
-        var toLoad = desiredTiles.Except(serverLoaded).ToList();
-        var toUnload = serverLoaded.Except(desiredTiles).ToList();
-
-        ServerQueuedLoads = toLoad.Count;
-        
-        foreach (var path in toLoad)
-        {
-            yield return loader.Load(path, true, logActions);
-            ServerQueuedLoads = Mathf.Max(0, ServerQueuedLoads - 1);
-        }
-
-        foreach (var path in toUnload)
-        {
-            yield return loader.Unload(path, true, logActions);
-        }
-
-        serverLoaded.Clear();
-        foreach (var path in desiredTiles)
-        {
-            if (SceneManager.GetSceneByPath(path).isLoaded)
-            {
-                serverLoaded.Add(path);
-            }
-        }
-
-        if (isServer)
-        {
-            RpcSyncSceneSet(serverLoaded.ToArray());
+            EmitDebugSnapshot("server-union");
         }
     }
 
     [ClientRpc(channel = Channels.Reliable)]
     private void RpcSyncSceneSet(string[] scenePaths)
     {
-        if (!isClient || scenePaths == null)
+        if (!isClient || scenePaths == null || clientStreamingStrategy != ClientStreamingStrategy.ServerUnion)
         {
             return;
         }
@@ -314,6 +329,66 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
 
         clientApplyCoroutine = StartCoroutine(ApplyClientSceneSet(scenePaths));
+    }
+
+    private void EnsureClientLoopState()
+    {
+        bool shouldRunClientLoop = isActiveAndEnabled && NetworkClient.active && !NetworkServer.active && clientStreamingStrategy == ClientStreamingStrategy.LocalClient && index != null;
+        if (shouldRunClientLoop)
+        {
+            if (clientLoop == null)
+            {
+                clientLoop = StartCoroutine(ClientLoop());
+            }
+        }
+        else if (clientLoop != null)
+        {
+            StopCoroutine(clientLoop);
+            clientLoop = null;
+        }
+    }
+
+    private IEnumerator ClientLoop()
+    {
+        var wait = new WaitForSeconds(scanInterval);
+        var desired = new HashSet<string>();
+
+        while (isActiveAndEnabled && NetworkClient.active && !NetworkServer.active && clientStreamingStrategy == ClientStreamingStrategy.LocalClient)
+        {
+            Transform target = ResolveClientStreamingTarget();
+            if (target == null || index == null)
+            {
+                ClientQueuedLoads = 0;
+                yield return wait;
+                continue;
+            }
+
+            UpdateRadiusCache();
+            tempPlayerPositions.Clear();
+            tempPlayerPositions.Add(target.position);
+
+            streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired, tileSelectionMode, symmetricTileWindowRadius);
+            lastSelectionSummary = DescribeSceneSet(desired);
+            yield return ApplySceneDelta(clientLoaded, desired, false);
+            EmitDebugSnapshot("client-local");
+            yield return wait;
+        }
+    }
+
+    private Transform ResolveClientStreamingTarget()
+    {
+        if (NetworkClient.localPlayer != null)
+        {
+            player = NetworkClient.localPlayer.transform;
+            if (offlineTarget == null)
+            {
+                offlineTarget = player;
+            }
+
+            return player;
+        }
+
+        return player != null ? player : offlineTarget;
     }
 
     private IEnumerator ApplyClientSceneSet(IEnumerable<string> scenePaths)
@@ -339,35 +414,44 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
     
         var desired = new HashSet<string>(scenePaths ?? Enumerable.Empty<string>());
+        lastSelectionSummary = DescribeSceneSet(desired);
+        yield return ApplySceneDelta(clientLoaded, desired, false);
+        EmitDebugSnapshot("server-union");
+    }
 
-        if (desired.SetEquals(clientLoaded))
+    private IEnumerator ApplySceneDelta(HashSet<string> loadedSet, HashSet<string> desiredSet, bool isServer)
+    {
+        if (desiredSet.SetEquals(loadedSet))
         {
-            ClientQueuedLoads = 0;
+            if (isServer) ServerQueuedLoads = 0;
+            else ClientQueuedLoads = 0;
             yield break;
         }
 
-        var toLoad = desired.Except(clientLoaded).ToList();
-        var toUnload = clientLoaded.Except(desired).ToList();
+        var toLoad = desiredSet.Except(loadedSet).ToList();
+        var toUnload = loadedSet.Except(desiredSet).ToList();
 
-        ClientQueuedLoads = toLoad.Count;
-        
+        if (isServer) ServerQueuedLoads = toLoad.Count;
+        else ClientQueuedLoads = toLoad.Count;
+
         foreach (var path in toLoad)
         {
-            yield return loader.Load(path, false, logActions);
-            ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
+            yield return loader.Load(path, isServer, logActions);
+            if (isServer) ServerQueuedLoads = Mathf.Max(0, ServerQueuedLoads - 1);
+            else ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
         }
 
         foreach (var path in toUnload)
         {
-            yield return loader.Unload(path, false, logActions);
+            yield return loader.Unload(path, isServer, logActions);
         }
 
-        clientLoaded.Clear();
-        foreach (var path in desired)
+        loadedSet.Clear();
+        foreach (var path in desiredSet)
         {
             if (SceneManager.GetSceneByPath(path).isLoaded)
             {
-                clientLoaded.Add(path);
+                loadedSet.Add(path);
             }
         }
     }
@@ -409,6 +493,7 @@ public class TileStreamCoordinator : NetworkBehaviour
             if (offlineLoop == null) offlineLoop = StartCoroutine(OfflineLoop());
         }
 
+        EnsureClientLoopState();
         TryUpdatePlayerStartupGate();
     }
 
@@ -440,6 +525,12 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             StopCoroutine(clientApplyCoroutine);
             clientApplyCoroutine = null;
+        }
+
+        if (clientLoop != null)
+        {
+            StopCoroutine(clientLoop);
+            clientLoop = null;
         }
         
         if (clientLoaded.Count > 0)
@@ -493,28 +584,10 @@ public class TileStreamCoordinator : NetworkBehaviour
             tempPlayerPositions.Clear();
             tempPlayerPositions.Add(t.position);
 
-            streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired);
-
-            var toLoad = desired.Except(clientLoaded).ToList();
-            var toUnload = clientLoaded.Except(desired).ToList();
-
-            ClientQueuedLoads = toLoad.Count;
-
-            foreach (var path in toLoad)
-            {
-                yield return loader.Load(path, false, logActions);
-                ClientQueuedLoads = Mathf.Max(0, ClientQueuedLoads - 1);
-            }
-
-            foreach (var path in toUnload)
-                yield return loader.Unload(path, false, logActions);
-
-            clientLoaded.Clear();
-            foreach (var path in desired)
-            {
-                if (SceneManager.GetSceneByPath(path).isLoaded)
-                    clientLoaded.Add(path);
-            }
+            streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired, tileSelectionMode, symmetricTileWindowRadius);
+            lastSelectionSummary = DescribeSceneSet(desired);
+            yield return ApplySceneDelta(clientLoaded, desired, false);
+            EmitDebugSnapshot("offline-local");
 
             yield return wait;
         }
@@ -566,7 +639,13 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     private void Update()
     {
+        EnsureClientLoopState();
         TryUpdatePlayerStartupGate();
+
+        if (showDebugOverlay)
+        {
+            EmitDebugSnapshot();
+        }
     }
 
     private void TryUpdatePlayerStartupGate()
@@ -775,8 +854,116 @@ public class TileStreamCoordinator : NetworkBehaviour
         return Physics.Raycast(target.position + Vector3.up * 0.2f, Vector3.down, 0.6f, ~0, QueryTriggerInteraction.Ignore);
     }
 
+    private void EmitDebugSnapshot(string modeOverride = null)
+    {
+        if (index == null)
+        {
+            lastDebugSummary = "TileIndex missing.";
+            return;
+        }
+
+        Transform target = CurrentStreamingTarget;
+        Vector3 targetPosition = target != null ? target.position : Vector3.zero;
+        Vector2Int targetCoord = target != null ? index.WorldToTile(targetPosition) : new Vector2Int(int.MinValue, int.MinValue);
+        string loadedSummary = DescribeSceneSet(NetworkServer.active && !NetworkClient.active ? serverLoaded : clientLoaded);
+        string desiredSummary = string.IsNullOrEmpty(lastSelectionSummary) ? "[]" : lastSelectionSummary;
+        string spawnSummary = DescribeNearestSpawn(targetPosition);
+        string strategy = modeOverride ?? GetStreamingModeDescription();
+        string activeTileSummary = DescribeContainingTile(targetPosition);
+
+        lastDebugSummary = $"mode={strategy}
+selection={TileSelectionModeDescription}
+player={(target != null ? target.name : "null")} pos={targetPosition}
+coord={targetCoord}
+originOffset={index.OriginOffsetMeters} nominalTileSize={index.TileSizeMeters}
+activeTile={activeTileSummary}
+desired={desiredSummary}
+loaded={loadedSummary}
+{spawnSummary}";
+
+        if (!verboseDebugLogging || Time.unscaledTime < nextDebugLogTime)
+        {
+            return;
+        }
+
+        nextDebugLogTime = Time.unscaledTime + Mathf.Max(0.5f, scanInterval);
+        Debug.Log($"[TileStream] {lastDebugSummary}");
+    }
+
+    private string DescribeContainingTile(Vector3 position)
+    {
+        if (index == null)
+        {
+            return "unavailable";
+        }
+
+        Vector2Int coord = index.WorldToTile(position);
+        foreach (var record in index.GetRecordsForCoord(coord))
+        {
+            if (record.worldBounds.Contains(new Vector3(position.x, record.worldBounds.center.y, position.z)))
+            {
+                return $"{record.terrainLabel}/{System.IO.Path.GetFileNameWithoutExtension(record.scenePath)} boundsOrigin={record.worldOrigin} size={record.tileSize}";
+            }
+        }
+
+        if (index.TryGetCoordBounds(coord, out var bounds))
+        {
+            return $"coord={coord} combinedBoundsMin={bounds.min} size={bounds.size}";
+        }
+
+        return "none";
+    }
+
+    private string DescribeNearestSpawn(Vector3 fromPosition)
+    {
+        var spawnManager = Object.FindFirstObjectByType<SpawnPointManager>(FindObjectsInactive.Include);
+        if (spawnManager == null || !spawnManager.TryGetNearestSpawn(fromPosition, out var spawnIndex, out var spawnPose))
+        {
+            return "nearestSpawn=unavailable";
+        }
+
+        Vector2Int spawnCoord = index != null ? index.WorldToTile(spawnPose.position) : default;
+        return $"nearestSpawn=#{spawnIndex} pos={spawnPose.position} coord={spawnCoord}";
+    }
+
+    private string DescribeSceneSet(IEnumerable<string> paths)
+    {
+        if (paths == null)
+        {
+            return "[]";
+        }
+
+        return "[" + string.Join(", ", paths.Where(path => !string.IsNullOrWhiteSpace(path)).OrderBy(path => path).Select(path => System.IO.Path.GetFileNameWithoutExtension(path))) + "]";
+    }
+
+    private string GetStreamingModeDescription()
+    {
+        if (!NetworkClient.active)
+        {
+            return NetworkServer.active ? "server-union" : "offline-local";
+        }
+
+        if (NetworkServer.active)
+        {
+            return "host-shared-process";
+        }
+
+        return clientStreamingStrategy switch
+        {
+            ClientStreamingStrategy.LocalClient => "client-local",
+            ClientStreamingStrategy.ServerUnion => "server-union",
+            ClientStreamingStrategy.TargetedServer => "targeted-server",
+            _ => clientStreamingStrategy.ToString()
+        };
+    }
+
     private void OnGUI()
     {
+        if (showDebugOverlay && !string.IsNullOrEmpty(lastDebugSummary))
+        {
+            GUI.Box(new Rect(20f, Screen.height - 190f, 700f, 170f), lastDebugSummary);
+        }
+
         if (!showLoadingOverlay || !ShouldDisplayLoadingOverlay())
         {
             return;
@@ -1234,64 +1421,45 @@ public class TileStreamCoordinator : NetworkBehaviour
     {
         private readonly TileIndex index;
         private readonly List<Vector3> cachedPositions = new();
-        private readonly Dictionary<Vector2Int, List<TileIndex.TileRecord>> tilesByCoord = new();
-        private readonly List<TileIndex.TileRecord> coordQueryScratch = new();
+        private readonly List<TileIndex.TileRecord> tiles = new();
         private readonly HashSet<string> candidatePathScratch = new();
-        private readonly float minTileDimension;
-        private readonly float maxTileHalfDiagonal;
 
         public TileStreamer(TileIndex index)
         {
             this.index = index;
-            
-            if (index == null)
+            if (index != null)
             {
-                minTileDimension = 1f;
-                maxTileHalfDiagonal = 0f;
-                return;
-            }
-
-            var tileSize = index.TileSizeMeters;
-            minTileDimension = Mathf.Max(1f, Mathf.Min(Mathf.Abs(tileSize.x), Mathf.Abs(tileSize.y)));
-
-            float computedMaxHalfDiagonal = 0f;
-            var tiles = index.Tiles;
-            for (int i = 0; i < tiles.Count; ++i)
-            {
-                var record = tiles[i];
-                if (string.IsNullOrEmpty(record.scenePath))
+                for (int i = 0; i < index.Tiles.Count; i++)
                 {
-                    continue;
-                }
-
-                if (!tilesByCoord.TryGetValue(record.coord, out var bucket))
-                {
-                    bucket = new List<TileIndex.TileRecord>(1);
-                    tilesByCoord.Add(record.coord, bucket);
-                }
-
-                bucket.Add(record);
-
-                float halfDiagonal = record.worldBounds.extents.magnitude;
-                if (halfDiagonal > computedMaxHalfDiagonal)
-                {
-                    computedMaxHalfDiagonal = halfDiagonal;
+                    var record = index.Tiles[i];
+                    if (!string.IsNullOrWhiteSpace(record.scenePath))
+                    {
+                        tiles.Add(record);
+                    }
                 }
             }
-
-            maxTileHalfDiagonal = computedMaxHalfDiagonal;
         }
 
-        public void ComputeDesired(IEnumerable<Vector3> positions, float loadRadiusSquared, float unloadRadiusSquared, HashSet<string> current, HashSet<string> output)
+        public void ComputeDesired(IEnumerable<Vector3> positions, float loadRadiusSquared, float unloadRadiusSquared, HashSet<string> current, HashSet<string> output, TileSelectionMode selectionMode, int symmetricWindowRadius)
         {
             output.Clear();
-            if (index == null) return;
+            if (index == null)
+            {
+                return;
+            }
 
             cachedPositions.Clear();
             foreach (var pos in positions)
             {
                 cachedPositions.Add(pos);
-                AddTilesWithinRadius(pos, output, loadRadiusSquared);
+                if (selectionMode == TileSelectionMode.SymmetricWindow)
+                {
+                    AddTilesInWindow(pos, output, symmetricWindowRadius);
+                }
+                else
+                {
+                    AddTilesWithinRadius(pos, output, loadRadiusSquared);
+                }
             }
 
             if (cachedPositions.Count > 0 && unloadRadiusSquared > loadRadiusSquared)
@@ -1302,12 +1470,10 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         private void AddTilesWithinRadius(Vector3 position, HashSet<string> destination, float radiusSquared)
         {
-            CollectCandidateTiles(position, radiusSquared, coordQueryScratch);
             candidatePathScratch.Clear();
-
-            for (int i = 0; i < coordQueryScratch.Count; ++i)
+            for (int i = 0; i < tiles.Count; i++)
             {
-                var record = coordQueryScratch[i];
+                var record = tiles[i];
                 if (!candidatePathScratch.Add(record.scenePath))
                 {
                     continue;
@@ -1320,28 +1486,14 @@ public class TileStreamCoordinator : NetworkBehaviour
             }
         }
 
-        private void CollectCandidateTiles(Vector3 position, float radiusSquared, List<TileIndex.TileRecord> destination)
+        private void AddTilesInWindow(Vector3 position, HashSet<string> destination, int radius)
         {
-            destination.Clear();
-            if (tilesByCoord.Count == 0)
-            {
-                return;
-            }
-
-            float radius = Mathf.Sqrt(Mathf.Max(0f, radiusSquared));
-            float paddedRadius = radius + maxTileHalfDiagonal;
-            int coordRadius = Mathf.Max(0, Mathf.CeilToInt(paddedRadius / minTileDimension));
-
             Vector2Int centerCoord = index.WorldToTile(position);
-            for (int dx = -coordRadius; dx <= coordRadius; ++dx)
+            foreach (string scenePath in index.CoordsToSceneSet(centerCoord, Mathf.Max(0, radius)))
             {
-                for (int dy = -coordRadius; dy <= coordRadius; ++dy)
+                if (!string.IsNullOrWhiteSpace(scenePath))
                 {
-                    var coord = new Vector2Int(centerCoord.x + dx, centerCoord.y + dy);
-                    if (tilesByCoord.TryGetValue(coord, out List<TileIndex.TileRecord> bucket))
-                    {
-                        destination.AddRange(bucket);
-                    }
+                    destination.Add(scenePath);
                 }
             }
         }
@@ -1350,20 +1502,14 @@ public class TileStreamCoordinator : NetworkBehaviour
         {
             foreach (var path in currentTiles)
             {
-                if (desiredTiles.Contains(path))
+                if (desiredTiles.Contains(path) || !index.TryGetByScene(path, out var record))
                 {
                     continue;
                 }
 
-                if (!index.TryGetByScene(path, out var record))
-                {
-                    continue;
-                }
-
-                Vector3 center = record.worldBounds.center;
                 for (int i = 0; i < playerPositions.Count; ++i)
                 {
-                    if ((center - playerPositions[i]).sqrMagnitude <= unloadRadiusSquared)
+                    if (record.worldBounds.SqrDistance(playerPositions[i]) <= unloadRadiusSquared)
                     {
                         desiredTiles.Add(path);
                         break;
@@ -1372,7 +1518,7 @@ public class TileStreamCoordinator : NetworkBehaviour
             }
         }
     }
-    
+
     private IEnumerator ResolvePlayerLoop()
     {
         var wait = new WaitForSeconds(0.25f);

@@ -461,17 +461,11 @@ public sealed class WorldMapController : MonoBehaviour
             return;
         }
 
-        TileGridMetadata metadata = streaming.GridMetadata;
-        Vector2 tileSize = metadata != null ? metadata.TileSizeXZ : streaming.index.TileSizeMeters;
-        Vector2Int dimensions = metadata != null ? metadata.GridDimensions : EstimateGridDimensions(streaming.index);
-        Vector3 origin = metadata != null
-            ? metadata.GridOriginWorld
-            : new Vector3(streaming.index.OriginOffsetMeters.x, 0f, streaming.index.OriginOffsetMeters.y);
-
-        float totalWidth = Mathf.Max(1f, tileSize.x * dimensions.x);
-        float totalHeight = Mathf.Max(1f, tileSize.y * dimensions.y);
-        float centerX = origin.x + totalWidth * 0.5f;
-        float centerZ = origin.z + totalHeight * 0.5f;
+        Bounds worldBounds = GetIndexedWorldBounds(streaming.index);
+        float totalWidth = Mathf.Max(1f, worldBounds.size.x);
+        float totalHeight = Mathf.Max(1f, worldBounds.size.z);
+        float centerX = worldBounds.center.x;
+        float centerZ = worldBounds.center.z;
         float orthoSize = Mathf.Max(totalHeight * 0.5f, totalWidth * 0.5f / Mathf.Max(0.01f, mapCamera.aspect)) + 10f;
         float cameraHeight = cameraHeightPadding + cameraFarClipPadding * 0.15f;
 
@@ -612,21 +606,32 @@ public sealed class WorldMapController : MonoBehaviour
 
     private Vector2 GetNormalizedWorldPosition(Vector3 worldPosition)
     {
-        TileGridMetadata metadata = streaming != null ? streaming.GridMetadata : null;
         TileIndex tileIndex = streaming != null ? streaming.index : null;
-
-        Vector2 tileSize = metadata != null ? metadata.TileSizeXZ : tileIndex != null ? tileIndex.TileSizeMeters : Vector2.one;
-        Vector2Int dimensions = metadata != null ? metadata.GridDimensions : tileIndex != null ? EstimateGridDimensions(tileIndex) : Vector2Int.one;
-        Vector3 origin = metadata != null
-            ? metadata.GridOriginWorld
-            : tileIndex != null ? new Vector3(tileIndex.OriginOffsetMeters.x, 0f, tileIndex.OriginOffsetMeters.y) : Vector3.zero;
-
-        float totalWidth = Mathf.Max(1f, tileSize.x * Mathf.Max(1, dimensions.x));
-        float totalHeight = Mathf.Max(1f, tileSize.y * Mathf.Max(1, dimensions.y));
+        Bounds worldBounds = tileIndex != null ? GetIndexedWorldBounds(tileIndex) : new Bounds(Vector3.zero, Vector3.one);
+        Vector3 min = worldBounds.min;
+        float totalWidth = Mathf.Max(1f, worldBounds.size.x);
+        float totalHeight = Mathf.Max(1f, worldBounds.size.z);
 
         return new Vector2(
-            Mathf.Clamp01((worldPosition.x - origin.x) / totalWidth),
-            Mathf.Clamp01((worldPosition.z - origin.z) / totalHeight));
+            Mathf.Clamp01((worldPosition.x - min.x) / totalWidth),
+            Mathf.Clamp01((worldPosition.z - min.z) / totalHeight));
+    }
+
+    private Bounds GetIndexedWorldBounds(TileIndex tileIndex)
+    {
+        if (tileIndex == null || tileIndex.Tiles.Count == 0)
+        {
+            return new Bounds(Vector3.zero, Vector3.one);
+        }
+
+        Bounds bounds = tileIndex.Tiles[0].worldBounds;
+        for (int i = 1; i < tileIndex.Tiles.Count; i++)
+        {
+            bounds.Encapsulate(tileIndex.Tiles[i].worldBounds.min);
+            bounds.Encapsulate(tileIndex.Tiles[i].worldBounds.max);
+        }
+
+        return bounds;
     }
 
     private Vector2Int EstimateGridDimensions(TileIndex tileIndex)
