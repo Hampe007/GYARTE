@@ -82,6 +82,10 @@ public sealed class TileSceneGenerator : ScriptableObject
     [SerializeField] private bool onlyUpdateIfChanged; // small speed-up by skipping identical tiles (height-only compare)
     [SerializeField] private bool addToBuildSettings = true;
     [SerializeField] private bool clearConsoleBeforeActions;
+    [SerializeField, HideInInspector] private bool hasSliceResumeCheckpoint;
+    [SerializeField, HideInInspector] private int resumeTerrainIndex;
+    [SerializeField, HideInInspector] private int resumeTileFlatIndex;
+    [SerializeField, HideInInspector] private string resumeTerrainLabel = string.Empty;
 
     // Snapshot type (do NOT hold Terrain refs while running)
     private sealed class TerrainSnapshot
@@ -138,6 +142,11 @@ public sealed class TileSceneGenerator : ScriptableObject
     }
     
     public bool IsRunning => _isRunning;
+    public bool HasResumeCheckpoint => hasSliceResumeCheckpoint;
+    public string ResumeCheckpointDescription =>
+        hasSliceResumeCheckpoint
+            ? $"{resumeTerrainLabel} @ tile #{resumeTileFlatIndex + 1}"
+            : "No saved slicing checkpoint.";
     
     private int _runCounter;
     private string _activeRunId = "idle";
@@ -216,12 +225,59 @@ public sealed class TileSceneGenerator : ScriptableObject
         
         try
         {
-            RunForAllTerrains();
+            RunForAllTerrains(resumeFromCheckpoint: false);
             EditorUtility.DisplayDialog("Tile Scene Generator", "All terrains processed successfully.", "Great");
+        }
+        catch (OperationCanceledException)
+        {
+            LogWarning(
+                $"Slicing canceled at terrain '{resumeTerrainLabel}' step {resumeTileFlatIndex + 1}. " +
+                "Use 'Continue Slicing' to resume from this checkpoint."
+            );
+            EditorUtility.DisplayDialog(
+                "Tile Scene Generator",
+                $"Slicing canceled.\nSaved checkpoint: {ResumeCheckpointDescription}",
+                "OK");
         }
         catch (Exception ex)
         {
             LogError($"Failed: {ex}");
+            EditorUtility.DisplayDialog("Tile Scene Generator", $"Failed:\n{ex.Message}", "OK");
+        }
+    }
+
+    public void ContinueSliceWithDialogs()
+    {
+        BeginOperation("Continue Slicing");
+
+        if (!hasSliceResumeCheckpoint)
+        {
+            EditorUtility.DisplayDialog(
+                "Tile Scene Generator",
+                "No saved slicing checkpoint was found. Run a slice first.",
+                "OK");
+            return;
+        }
+
+        try
+        {
+            RunForAllTerrains(resumeFromCheckpoint: true);
+            EditorUtility.DisplayDialog("Tile Scene Generator", "Slicing resumed and completed successfully.", "Great");
+        }
+        catch (OperationCanceledException)
+        {
+            LogWarning(
+                $"Slicing canceled again at terrain '{resumeTerrainLabel}' step {resumeTileFlatIndex + 1}. " +
+                "You can continue from this new checkpoint."
+            );
+            EditorUtility.DisplayDialog(
+                "Tile Scene Generator",
+                $"Slicing canceled.\nUpdated checkpoint: {ResumeCheckpointDescription}",
+                "OK");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Failed while continuing slice: {ex}");
             EditorUtility.DisplayDialog("Tile Scene Generator", $"Failed:\n{ex.Message}", "OK");
         }
     }
@@ -783,7 +839,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     #endregion
 
     // MAIN ORCHESTRATOR (safe snapshots)
-    private void RunForAllTerrains()
+    private void RunForAllTerrains(bool resumeFromCheckpoint)
     {
         _isRunning = true;
         
@@ -816,9 +872,13 @@ public sealed class TileSceneGenerator : ScriptableObject
             }
 
             EnsureSettingsAsset();
+            int checkpointTerrainIndex = resumeFromCheckpoint && hasSliceResumeCheckpoint ? resumeTerrainIndex : 0;
+            int checkpointTileFlatIndex = resumeFromCheckpoint && hasSliceResumeCheckpoint ? resumeTileFlatIndex : 0;
+
             // loop through each terrain and time individually
-            foreach (var snap in snapshots)
+            for (int terrainIndex = 0; terrainIndex < snapshots.Count; terrainIndex++)
             {
+                var snap = snapshots[terrainIndex];
                 _terrainLog.Clear();
                 _changedHeights = _changedAlpha = _changedDetails = _changedTrees = false;
                 _treesAdded = _treesRemoved = _treesModifiedTiles = 0;
@@ -860,7 +920,16 @@ public sealed class TileSceneGenerator : ScriptableObject
                     r.origin = cachedOrigin; 
                     EditorUtility.SetDirty(settings);
                 }
-                var terrainRecords = RunSliceOrReslice(cachedOrigin, coordOffset);
+                int startFlatIndex = 0;
+                if (resumeFromCheckpoint)
+                {
+                    if (terrainIndex < checkpointTerrainIndex)
+                        startFlatIndex = int.MaxValue;
+                    else if (terrainIndex == checkpointTerrainIndex)
+                        startFlatIndex = Mathf.Max(0, checkpointTileFlatIndex);
+                }
+
+                var terrainRecords = RunSliceOrReslice(cachedOrigin, coordOffset, terrainIndex, startFlatIndex);
                 allTileIndexRecords.AddRange(terrainRecords);
                 expectedTileCount += tilesX * tilesY;
 
@@ -919,6 +988,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             }
             WriteMergedTileIndex(allTileIndexRecords, expectedTileCount, sharedTileSize2D, sharedOriginOffset);
             UpdateGridMetadataAsset(sharedTileSize2D, sharedOriginOffset);
+            ClearSliceResumeCheckpoint();
         }
         finally
         {
@@ -1682,7 +1752,11 @@ public sealed class TileSceneGenerator : ScriptableObject
     private void LogError(string message) => Debug.LogError(WithPrefix(message));
 
     // -------- core slicing (uses only cached data) --------
-    private List<TileIndex.TileRecord> RunSliceOrReslice(Vector3 cachedOrigin, Vector2Int coordOffset = default)
+    private List<TileIndex.TileRecord> RunSliceOrReslice(
+        Vector3 cachedOrigin,
+        Vector2Int coordOffset = default,
+        int terrainIndex = 0,
+        int startFlatTileIndex = 0)
     {
         ValidateResolutionDivisibility();
 
@@ -1752,9 +1826,23 @@ public sealed class TileSceneGenerator : ScriptableObject
             {
                 for (int tx = 0; tx < tilesX; tx++)
                 {
+                    int flatTileIndex = (ty * tilesX) + tx;
+                    if (flatTileIndex < startFlatTileIndex)
+                    {
+                        tempIndexRecords.Add(CreateTileRecord(tx, ty, coordOffset, tileSize, cachedOrigin, GetTileScenePath(tx, ty), copyProps ? GetPropAssetPath(tx, ty) : string.Empty));
+                        processed++;
+                        continue;
+                    }
+
                     float progress = processed / (float)total;
-                    EditorUtility.DisplayProgressBar($"Tile Slice/Reslice [{currentTerrainLabel}]",
-                        $"Processing tile {TileDisplayNameUtility.FormatTileReference(tx, ty)}", progress);
+                    if (EditorUtility.DisplayCancelableProgressBar(
+                        $"Tile Slice/Reslice [{currentTerrainLabel}]",
+                        $"Processing tile {TileDisplayNameUtility.FormatTileReference(tx, ty)}",
+                        progress))
+                    {
+                        SaveSliceResumeCheckpoint(terrainIndex, flatTileIndex, currentTerrainLabel);
+                        throw new OperationCanceledException("Slicing canceled by user.");
+                    }
                     
                     EnsureOutputWriteFolders();
 
@@ -1820,7 +1908,7 @@ public sealed class TileSceneGenerator : ScriptableObject
 
                     // Scene setup
                     string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
-                    string tileScenePath = $"{_outputScenesFolder}/{tileSceneName}.unity";
+                    string tileScenePath = GetTileScenePath(tx, ty);
                     bool sceneExists = File.Exists(tileScenePath);
                     string propAssetPath = copyProps ? GetPropAssetPath(tx, ty) : string.Empty;
 
@@ -1837,30 +1925,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                             EditorSceneManager.MarkSceneDirty(opened);
                             EditorSceneManager.SaveScene(opened);
 
-                            // ---------------------------
-                            // TILE INDEX RECORD (RESLICE)
-                            // ---------------------------
-                            Vector3 tileOrigin = cachedOrigin + new Vector3(
-                                tx * tileSize.x,
-                                0f,
-                                ty * tileSize.z
-                            );
-
-                            float verticalExtent = Mathf.Max(tileSize.y * 0.5f, 4000f);
-                            Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, verticalExtent, tileSize.z * 0.5f);
-                            Vector3 boundsSize = new Vector3(tileSize.x, verticalExtent * 2f, tileSize.z);
-
-                            tempIndexRecords.Add(new TileIndex.TileRecord
-                            {
-                                coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
-                                terrainLabel = currentTerrainLabel,
-                                scenePath = tileScenePath,
-                                worldBounds = new Bounds(boundsCenter, boundsSize),
-                                worldOrigin = tileOrigin,
-                                tileSize = tileSize,
-                                propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
-                                propDataPath = propAssetPath
-                            });
+                            tempIndexRecords.Add(CreateTileRecord(tx, ty, coordOffset, tileSize, cachedOrigin, tileScenePath, propAssetPath));
                         }
                         finally
                         {
@@ -1886,30 +1951,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                         EditorSceneManager.SaveScene(newScene, tileScenePath);
                         EditorSceneManager.CloseScene(newScene, true);
 
-                        // ---------------------------
-                        // TILE INDEX RECORD (FRESH)
-                        // ---------------------------
-                        Vector3 tileOrigin = cachedOrigin + new Vector3(
-                            tx * tileSize.x,
-                            0f,
-                            ty * tileSize.z
-                        );
-
-                        float verticalExtent = Mathf.Max(tileSize.y * 0.5f, 4000f);
-                        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, verticalExtent, tileSize.z * 0.5f);
-                        Vector3 boundsSize = new Vector3(tileSize.x, verticalExtent * 2f, tileSize.z);
-
-                        tempIndexRecords.Add(new TileIndex.TileRecord
-                        {
-                            coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
-                            scenePath = tileScenePath,
-                            worldBounds = new Bounds(boundsCenter, boundsSize),
-                            worldOrigin = tileOrigin,
-                            tileSize = tileSize,
-                            terrainLabel = currentTerrainLabel,
-                            propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
-                            propDataPath = propAssetPath
-                        });
+                        tempIndexRecords.Add(CreateTileRecord(tx, ty, coordOffset, tileSize, cachedOrigin, tileScenePath, propAssetPath));
                     }
 
                     if (addToBuildSettings)
@@ -1930,6 +1972,63 @@ public sealed class TileSceneGenerator : ScriptableObject
                 EditorSceneManager.OpenScene(originalScenePath, OpenSceneMode.Single);
         }
 
+    }
+
+    private string GetTileScenePath(int tx, int ty)
+    {
+        string tileSceneName = ReplaceTokens(sceneNamePattern, tx, ty);
+        return $"{_outputScenesFolder}/{tileSceneName}.unity";
+    }
+
+    private TileIndex.TileRecord CreateTileRecord(
+        int tx,
+        int ty,
+        Vector2Int coordOffset,
+        Vector3 tileSize,
+        Vector3 cachedOrigin,
+        string tileScenePath,
+        string propAssetPath)
+    {
+        Vector3 tileOrigin = cachedOrigin + new Vector3(
+            tx * tileSize.x,
+            0f,
+            ty * tileSize.z
+        );
+
+        float verticalExtent = Mathf.Max(tileSize.y * 0.5f, 4000f);
+        Vector3 boundsCenter = tileOrigin + new Vector3(tileSize.x * 0.5f, verticalExtent, tileSize.z * 0.5f);
+        Vector3 boundsSize = new Vector3(tileSize.x, verticalExtent * 2f, tileSize.z);
+
+        return new TileIndex.TileRecord
+        {
+            coord = new Vector2Int(tx + coordOffset.x, ty + coordOffset.y),
+            scenePath = tileScenePath,
+            worldBounds = new Bounds(boundsCenter, boundsSize),
+            worldOrigin = tileOrigin,
+            tileSize = tileSize,
+            terrainLabel = currentTerrainLabel,
+            propRootName = TileRuntimeConstants.PropRootPrefix + (tx + coordOffset.x) + "_" + (ty + coordOffset.y),
+            propDataPath = propAssetPath
+        };
+    }
+
+    private void SaveSliceResumeCheckpoint(int terrainIndex, int flatTileIndex, string terrainLabel)
+    {
+        hasSliceResumeCheckpoint = true;
+        resumeTerrainIndex = Mathf.Max(0, terrainIndex);
+        resumeTileFlatIndex = Mathf.Max(0, flatTileIndex);
+        resumeTerrainLabel = terrainLabel ?? string.Empty;
+        EditorUtility.SetDirty(this);
+        AssetDatabase.SaveAssets();
+    }
+
+    private void ClearSliceResumeCheckpoint()
+    {
+        hasSliceResumeCheckpoint = false;
+        resumeTerrainIndex = 0;
+        resumeTileFlatIndex = 0;
+        resumeTerrainLabel = string.Empty;
+        EditorUtility.SetDirty(this);
     }
     
     private void WriteMergedTileIndex(
