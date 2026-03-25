@@ -67,6 +67,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     private string _outputScenesFolder;
     private string _outputDataFolder;
     private string _outputPropsFolder;
+    private string _effectiveOutputFolder;
     private bool _outputWriteFoldersEnsured;
 
     // Copy Channels
@@ -613,13 +614,11 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (!ConfirmCleanup("Delete Generated Tile Scenes", "This will delete generated tile scene assets.", sceneFolders))
             return;
 
-        int sceneCount = DeleteAssetsByFilter("t:Scene", sceneFolders);
-
-        DeleteEmptyFolders(sceneFolders, paths.ConfiguredRoot);
+        int deletedFolders = DeleteFoldersRecursivelyWithProgress("Delete Generated Tile Scenes", sceneFolders, paths.ConfiguredRoot);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Log($"Cleanup complete. scenes deleted={sceneCount}");
+        Log($"Cleanup complete. scene folders deleted={deletedFolders}");
     }
 
     private void DeleteGeneratedTileAssetsWithConfirmation()
@@ -649,14 +648,11 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (!ConfirmCleanup("Delete Generated TerrainData/Assets", "This will delete generated TerrainData and tile asset output.", folders))
             return;
 
-        int terrainCount = DeleteAssetsByFilter("t:TerrainData", folders);
-        int otherAssetsCount = DeleteNonSceneAssets(folders);
-
-        DeleteEmptyFolders(folders, paths.ConfiguredRoot);
+        int deletedFolders = DeleteFoldersRecursivelyWithProgress("Delete Generated TerrainData/Assets", folders, paths.ConfiguredRoot);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Log($"Cleanup complete. assets deleted={terrainCount + otherAssetsCount}");
+        Log($"Cleanup complete. asset folders deleted={deletedFolders}");
     }
 
     private void DeleteAllGeneratedOutputWithConfirmation()
@@ -681,16 +677,12 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (!ConfirmCleanup("Delete ALL Generated Tile Output", "This will delete generated scenes and tile assets.", folders))
             return;
 
-        int sceneCount = DeleteAssetsByFilter("t:Scene", folders);
-        int terrainCount = DeleteAssetsByFilter("t:TerrainData", folders);
-        int otherAssetsCount = DeleteNonSceneAssets(folders);
-
-        DeleteEmptyFolders(folders, paths.ConfiguredRoot);
+        int deletedFolders = DeleteFoldersRecursivelyWithProgress("Delete ALL Generated Tile Output", folders, paths.ConfiguredRoot);
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Log($"Cleanup complete. scenes deleted={sceneCount}, assets deleted={terrainCount + otherAssetsCount}, folders=[{string.Join(", ", folders)}]");
+        Log($"Cleanup complete. deleted folders={deletedFolders}, targets=[{string.Join(", ", folders)}]");
     }
 
     private bool ConfirmCleanup(string title, string message, IEnumerable<string> folders)
@@ -733,106 +725,47 @@ public sealed class TileSceneGenerator : ScriptableObject
         return true;
     }
 
-    private int DeleteAssetsByFilter(string filter, string[] searchFolders)
+    private int DeleteFoldersRecursivelyWithProgress(string progressTitle, IEnumerable<string> candidateFolders, string configuredRoot)
     {
-        int deleted = 0;
-        foreach (var folder in searchFolders.Where(AssetDatabase.IsValidFolder).Distinct())
-        {
-            string[] guids = AssetDatabase.FindAssets(filter, new[] { folder });
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (string.IsNullOrWhiteSpace(path))
-                    continue;
-                if (AssetDatabase.DeleteAsset(path))
-                    deleted++;
-            }
-        }
-
-        return deleted;
-    }
-
-    private int DeleteNonSceneAssets(string[] searchFolders)
-    {
-        int deleted = 0;
-        foreach (var folder in searchFolders.Where(AssetDatabase.IsValidFolder).Distinct())
-        {
-            string[] guids = AssetDatabase.FindAssets(string.Empty, new[] { folder });
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (string.IsNullOrWhiteSpace(path) || AssetDatabase.IsValidFolder(path) || path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (AssetDatabase.DeleteAsset(path))
-                    deleted++;
-            }
-        }
-
-        return deleted;
-    }
-
-    private void DeleteEmptyFolders(IEnumerable<string> folders, string configuredRoot)
-    {
-        // Work bottom-up: deepest folders first.
-        var ordered = folders
-            .Where(AssetDatabase.IsValidFolder)
+        string safeRoot = NormalizeAssetPath(configuredRoot);
+        var folders = candidateFolders
+            .Where(f => !string.IsNullOrWhiteSpace(f))
             .Select(NormalizeAssetPath)
+            .Where(AssetDatabase.IsValidFolder)
+            .Where(f => f.Equals(safeRoot, StringComparison.Ordinal) || IsCleanupPathCompatible(safeRoot, f))
             .Distinct()
             .OrderByDescending(f => f.Count(c => c == '/'))
             .ToArray();
 
-        foreach (string start in ordered)
-            DeleteEmptyFolderAndParents(start, configuredRoot);
-    }
+        if (folders.Length == 0)
+            return 0;
 
-    private void DeleteEmptyFolderAndParents(string folder, string configuredRoot)
-    {
-        string current = NormalizeAssetPath(folder);
-
-        while (!string.IsNullOrWhiteSpace(current) &&
-               AssetDatabase.IsValidFolder(current) &&
-               !current.Equals("Assets", StringComparison.Ordinal))
+        int deletedFolders = 0;
+        try
         {
-            // Only allow deleting folders that pass your safety rules
-            if (!IsCleanupPathCompatible(configuredRoot, current) && !current.Equals(NormalizeAssetPath(configuredRoot), StringComparison.Ordinal))
-                break;
+            for (int i = 0; i < folders.Length; i++)
+            {
+                string folder = folders[i];
+                float progress = (i + 1) / (float)folders.Length;
+                EditorUtility.DisplayProgressBar(
+                    progressTitle,
+                    $"Deleting folder ({i + 1}/{folders.Length}): {folder}",
+                    progress);
 
-            if (!IsFolderTrulyEmpty(current))
-                break;
-
-            FileUtil.DeleteFileOrDirectory(current);
-            FileUtil.DeleteFileOrDirectory(current + ".meta");
-
-            string parent = NormalizeAssetPath(Path.GetDirectoryName(current));
-            if (string.IsNullOrWhiteSpace(parent) || parent.Equals(current, StringComparison.Ordinal))
-                break;
-
-            current = parent;
+                FileUtil.DeleteFileOrDirectory(folder);
+                FileUtil.DeleteFileOrDirectory(folder + ".meta");
+                if (!AssetDatabase.IsValidFolder(folder))
+                    deletedFolders++;
+            }
         }
-    }
-
-    private static bool IsFolderTrulyEmpty(string assetFolderPath)
-    {
-        // Convert "Assets/..." to an absolute path on disk.
-        string absolute = Path.GetFullPath(assetFolderPath);
-
-        if (!Directory.Exists(absolute))
-            return true;
-
-        // Any real files (excluding .meta) means not empty.
-        foreach (var file in Directory.EnumerateFiles(absolute, "*", SearchOption.TopDirectoryOnly))
+        finally
         {
-            if (!file.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
-                return false;
+            EditorUtility.ClearProgressBar();
         }
 
-        // Any subdirectories mean it's not empty.
-        foreach (var dir in Directory.EnumerateDirectories(absolute, "*", SearchOption.TopDirectoryOnly))
-            return false;
-
-        return true;
+        return deletedFolders;
     }
-    
+
     private void DebugLogResolvedFolders(string label, IEnumerable<string> folders)
     {
         var list = folders
@@ -1618,6 +1551,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         _outputScenesFolder = scenesFolder;
         _outputDataFolder   = dataFolder;
         _outputPropsFolder  = propsFolder;
+        _effectiveOutputFolder = effectiveOutputFolder;
         _outputWriteFoldersEnsured = false;
     }
 
@@ -1626,7 +1560,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         if (_outputWriteFoldersEnsured)
             return;
 
-        EnsureFolder(outputFolder);
+        EnsureFolder(string.IsNullOrWhiteSpace(_effectiveOutputFolder) ? outputFolder : _effectiveOutputFolder);
         EnsureFolder(_outputScenesFolder);
         EnsureFolder(_outputDataFolder);
         EnsureFolder(_outputPropsFolder);
