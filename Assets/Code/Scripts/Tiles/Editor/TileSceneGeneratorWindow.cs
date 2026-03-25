@@ -158,6 +158,19 @@ public sealed class TileSceneGeneratorWindow : EditorWindow
             if (GUILayout.Button(new GUIContent("Run Slice / Re-slice", "Generate tile scenes or update existing tile terrain data.")))
                 generator.RunSliceWithDialogs();
         }
+
+        if (generator.HasResumeCheckpoint)
+        {
+            EditorGUILayout.HelpBox(
+                $"Saved slicing checkpoint: {generator.ResumeCheckpointDescription}",
+                MessageType.Info);
+
+            using (new EditorGUI.DisabledScope(!generator.CanRun()))
+            {
+                if (GUILayout.Button(new GUIContent("Continue Slicing", "Resume from the last canceled slicing step.")))
+                    generator.ContinueSliceWithDialogs();
+            }
+        }
     }
 
     private void DrawCleanupSection()
