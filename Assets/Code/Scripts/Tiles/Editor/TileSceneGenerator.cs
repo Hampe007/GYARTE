@@ -1782,6 +1782,7 @@ public sealed class TileSceneGenerator : ScriptableObject
         
         TreePrototype[] treePrototypes = null;
         int[] treePrototypeRemap = null;
+        List<TreeInstance>[] sourceTreesByTile = null;
         if (copyTrees)
         {
             treePrototypes = SanitizeTreePrototypes(_srcTD.treePrototypes, out treePrototypeRemap, out int missingPrototypeCount);
@@ -1804,6 +1805,8 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
 
         bool canCopyTrees = copyTrees && (treePrototypes?.Length ?? 0) > 0;
+        if (canCopyTrees)
+            sourceTreesByTile = BucketSourceTreesByTile(_srcTD.treeInstances, tilesX, tilesY);
 
         int total = tilesX * tilesY;
         int processed = 0;
@@ -1849,7 +1852,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                     // Build new TerrainData from the source master
                     TerrainData newTD = BuildTileTerrainData(
                         tx, ty, hStepX, hStepY, aStepX, aStepY, dStepX, dStepY,
-                        layers, detailLayerCount, treePrototypes, treePrototypeRemap
+                        layers, detailLayerCount, treePrototypes, treePrototypeRemap, sourceTreesByTile
                     );
 
                     // Save TerrainData under DATA folder
@@ -2209,7 +2212,7 @@ public sealed class TileSceneGenerator : ScriptableObject
     private TerrainData BuildTileTerrainData(
     int tx, int ty,
     int hStepX, int hStepY, int aStepX, int aStepY, int dStepX, int dStepY,
-    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes, int[] treePrototypeRemap)
+    TerrainLayer[] layers, int detailLayerCount, TreePrototype[] treePrototypes, int[] treePrototypeRemap, List<TreeInstance>[] sourceTreesByTile)
 {
     var td = new TerrainData();
 
@@ -2295,15 +2298,18 @@ public sealed class TileSceneGenerator : ScriptableObject
     if (copyTrees && treePrototypes != null && treePrototypes.Length > 0)
     {
         td.treePrototypes = treePrototypes;
-        var srcTrees = _srcTD.treeInstances;
         var tileTrees = new List<TreeInstance>(128);
+        int tileFlatIndex = (ty * tilesX) + tx;
+        var srcTileTrees = (sourceTreesByTile != null && tileFlatIndex >= 0 && tileFlatIndex < sourceTreesByTile.Length)
+            ? sourceTreesByTile[tileFlatIndex]
+            : null;
 
         float x0 = tx / (float)tilesX, x1 = (tx + 1) / (float)tilesX;
         float y0 = ty / (float)tilesY, y1 = (ty + 1) / (float)tilesY;
 
-        foreach (var t in srcTrees)
+        if (srcTileTrees != null)
         {
-            if (t.position.x >= x0 && t.position.x < x1 && t.position.z >= y0 && t.position.z < y1)
+            foreach (var t in srcTileTrees)
             {
                 var nt = t;
                 int mappedPrototypeIndex = nt.prototypeIndex;
@@ -2332,6 +2338,25 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     return td;
 }
+
+    private static List<TreeInstance>[] BucketSourceTreesByTile(TreeInstance[] sourceTrees, int tileCountX, int tileCountY)
+    {
+        int totalTiles = tileCountX * tileCountY;
+        var buckets = new List<TreeInstance>[totalTiles];
+        if (sourceTrees == null || sourceTrees.Length == 0)
+            return buckets;
+
+        foreach (var tree in sourceTrees)
+        {
+            int tx = Mathf.Clamp((int)(tree.position.x * tileCountX), 0, tileCountX - 1);
+            int ty = Mathf.Clamp((int)(tree.position.z * tileCountY), 0, tileCountY - 1);
+            int flatIndex = (ty * tileCountX) + tx;
+            buckets[flatIndex] ??= new List<TreeInstance>(8);
+            buckets[flatIndex].Add(tree);
+        }
+
+        return buckets;
+    }
 
     private static void SaveOrReplaceTerrainDataAsset(string tdPath, TerrainData newTD, TerrainData existingTD)
     {
