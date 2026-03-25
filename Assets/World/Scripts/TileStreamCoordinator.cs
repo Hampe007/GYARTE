@@ -116,6 +116,9 @@ public class TileStreamCoordinator : NetworkBehaviour
     private float nextDebugLogTime;
     private string lastDebugSummary = string.Empty;
     private string lastSelectionSummary = string.Empty;
+    private string lastDesiredServerSummary = string.Empty;
+    private string lastDesiredClientSummary = string.Empty;
+    private string lastDesiredOfflineSummary = string.Empty;
 
     public override void OnStartServer()
     {
@@ -209,10 +212,12 @@ public class TileStreamCoordinator : NetworkBehaviour
 
     public IEnumerable<string> GetActiveTilePaths()
     {
-        var source = NetworkServer.active && !NetworkClient.active ? serverLoaded : clientLoaded;
-        foreach (var path in source)
+        foreach (var kvp in liveTiles)
         {
-            yield return path;
+            if (kvp.Value.Scene.isLoaded)
+            {
+                yield return kvp.Key;
+            }
         }
     }
 
@@ -223,7 +228,28 @@ public class TileStreamCoordinator : NetworkBehaviour
             return false;
         }
 
-        return (NetworkServer.active && !NetworkClient.active ? serverLoaded : clientLoaded).Contains(scenePath);
+        return liveTiles.TryGetValue(scenePath, out var tile) && tile.Scene.isLoaded;
+    }
+
+    public string GetActiveTileDataSourceDescription()
+    {
+        if (!NetworkClient.active)
+        {
+            return NetworkServer.active ? "liveTiles(server)" : "liveTiles(offline)";
+        }
+
+        if (NetworkServer.active)
+        {
+            return "liveTiles(host-shared-process)";
+        }
+
+        return clientStreamingStrategy switch
+        {
+            ClientStreamingStrategy.LocalClient => "liveTiles(client-local)",
+            ClientStreamingStrategy.ServerUnion => "liveTiles(server-union-client)",
+            ClientStreamingStrategy.TargetedServer => "liveTiles(targeted-server-client)",
+            _ => "liveTiles(client)"
+        };
     }
 
     private void ResolveGridMetadataAndIndex()
@@ -307,6 +333,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
         streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, serverLoaded, desiredTiles, tileSelectionMode, symmetricTileWindowRadius);
         lastSelectionSummary = DescribeSceneSet(desiredTiles);
+        LogDesiredTileSetIfChanged("server", desiredTiles, ref lastDesiredServerSummary);
         yield return ApplySceneDelta(serverLoaded, desiredTiles, true);
 
         if (verboseDebugLogging)
@@ -369,6 +396,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired, tileSelectionMode, symmetricTileWindowRadius);
             lastSelectionSummary = DescribeSceneSet(desired);
+            LogDesiredTileSetIfChanged("client", desired, ref lastDesiredClientSummary);
             yield return ApplySceneDelta(clientLoaded, desired, false);
             EmitDebugSnapshot("client-local");
             yield return wait;
@@ -586,6 +614,7 @@ public class TileStreamCoordinator : NetworkBehaviour
 
             streamer.ComputeDesired(tempPlayerPositions, loadRadiusSquared, unloadRadiusSquared, clientLoaded, desired, tileSelectionMode, symmetricTileWindowRadius);
             lastSelectionSummary = DescribeSceneSet(desired);
+            LogDesiredTileSetIfChanged("offline", desired, ref lastDesiredOfflineSummary);
             yield return ApplySceneDelta(clientLoaded, desired, false);
             EmitDebugSnapshot("offline-local");
 
@@ -939,6 +968,23 @@ public class TileStreamCoordinator : NetworkBehaviour
         return "[" + string.Join(", ", paths.Where(path => !string.IsNullOrWhiteSpace(path)).OrderBy(path => path).Select(path => System.IO.Path.GetFileNameWithoutExtension(path))) + "]";
     }
 
+    private void LogDesiredTileSetIfChanged(string context, HashSet<string> desiredSet, ref string lastSummary)
+    {
+        if (!logActions && !verboseDebugLogging)
+        {
+            return;
+        }
+
+        string summary = DescribeSceneSet(desiredSet);
+        if (summary == lastSummary)
+        {
+            return;
+        }
+
+        lastSummary = summary;
+        Debug.Log($"[TileStream] desired-set changed ({context}) count={desiredSet.Count} tiles={summary}");
+    }
+
     private string GetStreamingModeDescription()
     {
         if (!NetworkClient.active)
@@ -1208,6 +1254,11 @@ public class TileStreamCoordinator : NetworkBehaviour
         }
         
         firstTileLoadConfirmed = true;
+
+        if (log)
+        {
+            Debug.Log($"[TileStream] Marked loaded scene '{path}'. liveTiles={liveTiles.Count}");
+        }
     }
 
     private IEnumerator UnloadSceneInternal(string path, bool isServer, bool log)
@@ -1235,6 +1286,11 @@ public class TileStreamCoordinator : NetworkBehaviour
         while (!op.isDone)
         {
             yield return null;
+        }
+
+        if (log)
+        {
+            Debug.Log($"[TileStream] Marked unloaded scene '{path}'. liveTiles(before-remove)={liveTiles.Count}");
         }
     }
 
