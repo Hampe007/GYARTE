@@ -66,6 +66,9 @@ public sealed class WorldMapController : MonoBehaviour
     private readonly Dictionary<string, WorldMapTileOverlay> tileOverlays = new();
     private readonly List<TileIndex.TileRecord> sortedTiles = new();
     private readonly HashSet<string> activeTilePaths = new();
+    private float nextOverlayDebugLogTime;
+    private int lastOverlayLoadedCount = -1;
+    private string lastOverlaySource = string.Empty;
 
 
     public void Bind(TileStreamCoordinator coordinator)
@@ -494,6 +497,8 @@ public sealed class WorldMapController : MonoBehaviour
             activeTilePaths.Add(path);
         }
 
+        MaybeLogOverlaySource();
+
         Transform target = streaming.CurrentStreamingTarget;
         Vector2Int playerCoord = target != null ? streaming.index.WorldToTile(target.position) : new Vector2Int(int.MinValue, int.MinValue);
 
@@ -553,6 +558,25 @@ public sealed class WorldMapController : MonoBehaviour
 
         titleLabel.text = $"WORLD MAP  [{toggleKey}]";
         detailLabel.text = $"Loaded: {activeTilePaths.Count} / {tileOverlays.Count}    Current Tile: {(playerCoord.x == int.MinValue ? "--" : $"{playerCoord.x}, {playerCoord.y}")}";
+    }
+
+    private void MaybeLogOverlaySource()
+    {
+        if (streaming == null || (!streaming.logActions && !Debug.isDebugBuild))
+        {
+            return;
+        }
+
+        string source = streaming.GetActiveTileDataSourceDescription();
+        if (Time.unscaledTime < nextOverlayDebugLogTime && lastOverlayLoadedCount == activeTilePaths.Count && lastOverlaySource == source)
+        {
+            return;
+        }
+
+        nextOverlayDebugLogTime = Time.unscaledTime + 1f;
+        lastOverlayLoadedCount = activeTilePaths.Count;
+        lastOverlaySource = source;
+        Debug.Log($"[WorldMap] Active tile overlay source={source} count={activeTilePaths.Count}");
     }
 
     private void LayoutTileRects()
