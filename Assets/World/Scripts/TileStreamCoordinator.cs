@@ -871,15 +871,18 @@ public class TileStreamCoordinator : NetworkBehaviour
         string strategy = modeOverride ?? GetStreamingModeDescription();
         string activeTileSummary = DescribeContainingTile(targetPosition);
 
-        lastDebugSummary = $"mode={strategy}
-selection={TileSelectionModeDescription}
-player={(target != null ? target.name : "null")} pos={targetPosition}
-coord={targetCoord}
-originOffset={index.OriginOffsetMeters} nominalTileSize={index.TileSizeMeters}
-activeTile={activeTileSummary}
-desired={desiredSummary}
-loaded={loadedSummary}
-{spawnSummary}";
+        lastDebugSummary = string.Join("\n", new[]
+        {
+            $"mode={strategy}",
+            $"selection={TileSelectionModeDescription}",
+            $"player={(target != null ? target.name : "null")} pos={targetPosition}",
+            $"coord={targetCoord}",
+            $"originOffset={index.OriginOffsetMeters} nominalTileSize={index.TileSizeMeters}",
+            $"activeTile={activeTileSummary}",
+            $"desired={desiredSummary}",
+            $"loaded={loadedSummary}",
+            $"{spawnSummary}"
+        });
 
         if (!verboseDebugLogging || Time.unscaledTime < nextDebugLogTime)
         {

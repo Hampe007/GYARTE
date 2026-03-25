@@ -62,6 +62,14 @@ namespace Mirror
         GUIContent title;
         Styles styles = new Styles();
 
+        public override void Cleanup()
+        {
+            title = null;
+            styles = null;
+
+            base.Cleanup();
+        }
+
         public override GUIContent GetPreviewTitle()
         {
             if (title == null)
@@ -98,7 +106,6 @@ namespace Mirror
             if (styles == null)
                 styles = new Styles();
 
-
             // padding
             RectOffset previewPadding = new RectOffset(-5, -5, -5, -5);
             Rect paddedr = previewPadding.Add(r);
@@ -114,20 +121,15 @@ namespace Mirror
             Y = DrawObservers(identity, initialX, Y);
 
             _ = DrawOwner(identity, initialX, Y);
-
         }
 
         float DrawNetworkIdentityInfo(NetworkIdentity identity, float initialX, float Y)
         {
             IEnumerable<NetworkIdentityInfo> infos = GetNetworkIdentityInfo(identity);
-            // Get required label size for the names of the information values we're going to show
-            // There are two columns, one with label for the name of the info and the next for the value
             Vector2 maxNameLabelSize = new Vector2(140, 16);
             Vector2 maxValueLabelSize = GetMaxNameLabelSize(infos);
 
             Rect labelRect = new Rect(initialX, Y, maxNameLabelSize.x, maxNameLabelSize.y);
-
-            // height needs a +1 to line up nicely
             Rect idLabelRect = new Rect(maxNameLabelSize.x, Y, maxValueLabelSize.x, maxValueLabelSize.y + 1);
 
             foreach (NetworkIdentityInfo info in infos)
@@ -146,12 +148,10 @@ namespace Mirror
         {
             IEnumerable<NetworkBehaviourInfo> behavioursInfo = GetNetworkBehaviorInfo(identity);
 
-            // Show behaviours list in a different way than the name/value pairs above
             Vector2 maxBehaviourLabelSize = GetMaxBehaviourLabelSize(behavioursInfo);
             Rect behaviourRect = new Rect(initialX, Y + 10, maxBehaviourLabelSize.x, maxBehaviourLabelSize.y);
 
             GUI.Label(behaviourRect, new GUIContent("Network Behaviours"), styles.labelStyle);
-            // indent names
             behaviourRect.x += 20;
             behaviourRect.y += behaviourRect.height;
 
@@ -159,7 +159,6 @@ namespace Mirror
             {
                 if (info.behaviour == null)
                 {
-                    // could be the case in the editor after existing play mode.
                     continue;
                 }
 
@@ -178,7 +177,6 @@ namespace Mirror
                 Rect observerRect = new Rect(initialX, Y + 10, 200, 20);
 
                 GUI.Label(observerRect, new GUIContent("Network observers"), styles.labelStyle);
-                // indent names
                 observerRect.x += 20;
                 observerRect.y += observerRect.height;
 
@@ -204,7 +202,6 @@ namespace Mirror
             return Y;
         }
 
-        // Get the maximum size used by the value of information items
         Vector2 GetMaxNameLabelSize(IEnumerable<NetworkIdentityInfo> infos)
         {
             Vector2 maxLabelSize = Vector2.zero;
@@ -257,6 +254,7 @@ namespace Mirror
                 infos.Add(GetBoolean("Is Owned", identity.isOwned));
                 infos.Add(GetBoolean("Is Local Player", identity.isLocalPlayer));
             }
+
             return infos;
         }
 
@@ -273,6 +271,7 @@ namespace Mirror
                     behaviour = behaviour
                 });
             }
+
             return behaviourInfos;
         }
 
@@ -283,6 +282,7 @@ namespace Mirror
             {
                 assetId = "<object has no prefab>";
             }
+
             return GetString("Asset ID", assetId);
         }
 
@@ -300,7 +300,7 @@ namespace Mirror
             return new NetworkIdentityInfo
             {
                 name = new GUIContent(name),
-                value = new GUIContent((value ? "Yes" : "No"))
+                value = new GUIContent(value ? "Yes" : "No")
             };
         }
     }

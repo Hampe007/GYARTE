@@ -395454,6 +395454,72 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6b53596c9f02e6145b9d44cc3c48f78c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &1844722978
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1844722980}
+  - component: {fileID: 1844722979}
+  m_Layer: 0
+  m_Name: WorldMapController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1844722979
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1844722978}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5c304662fb84c799ef8e8d3df0f9a7d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WorldMapController
+  streaming: {fileID: 1868536484}
+  mapCamera: {fileID: 0}
+  mapRenderTexture: {fileID: 0}
+  toggleKey: 27
+  screenCoverage: 0.9
+  mapAspectPadding: {x: 40, y: 40}
+  backdropColor: {r: 0, g: 0, b: 0, a: 0.82}
+  frameColor: {r: 0.07, g: 0.07, b: 0.07, a: 0.96}
+  mapTintColor: {r: 1, g: 1, b: 1, a: 1}
+  loadedTileFill: {r: 1, g: 1, b: 1, a: 0.08}
+  loadedTileBorder: {r: 1, g: 1, b: 1, a: 0.92}
+  unloadedTileFill: {r: 0, g: 0, b: 0, a: 0.6}
+  unloadedTileBorder: {r: 0.45, g: 0.45, b: 0.45, a: 0.5}
+  currentTileFill: {r: 1, g: 0.82, b: 0.18, a: 0.18}
+  currentTileBorder: {r: 1, g: 0.85, b: 0.25, a: 1}
+  playerMarkerColor: {r: 1, g: 0.4, b: 0.12, a: 1}
+  tileBorderThickness: 0.004
+  playerMarkerNormalizedSize: 0.018
+  renderTextureSize: 2048
+  cameraHeightPadding: 250
+  cameraNearClip: 0.3
+  cameraFarClipPadding: 3000
+--- !u!4 &1844722980
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1844722978}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1845236851
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -400753,12 +400819,17 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   index: {fileID: 11400000, guid: 4d1f91b12d2cee540904b4b32c58e8f0, type: 2}
-  gridMetadata: {fileID: 11400000, guid: 61c2890a5c88e3c449c7816aafaeeaf3, type: 2}
+  gridMetadata: {fileID: 11400000, guid: 56a9e620e17412149b6fc23bcabded4a, type: 2}
   player: {fileID: 0}
   loadRadius: 200
   edgeBuffer: 25
   scanInterval: 0.5
   logActions: 1
+  clientStreamingStrategy: 0
+  tileSelectionMode: 0
+  symmetricTileWindowRadius: 1
+  verboseDebugLogging: 0
+  showDebugOverlay: 0
   offlineStandalone: 1
   offlineTarget: {fileID: 0}
   disableInPlayerBuilds: 1
@@ -450556,11 +450627,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   streaming: {fileID: 1868536484}
   perfLogger: {fileID: 442848992}
+  performanceOverlay: {fileID: 0}
   globalPropGroups: []
   targetTerrain: {fileID: 1228233516}
   streamingEnabled: 1
   propsEnabled: 1
   terrainTexturesEnabled: 1
+  showPerformanceStats: 1
 --- !u!4 &2100211461
 Transform:
   m_ObjectHideFlags: 0
@@ -459328,6 +459401,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 698706188}
   - {fileID: 424206615}
+  - {fileID: 1844722980}
   - {fileID: 1482237752}
   - {fileID: 484476863}
   - {fileID: 1478240973}
