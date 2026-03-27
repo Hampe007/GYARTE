@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26ba79b91b4a43d899faf376128c91c0, type: 3}
+  m_Name: Props_Terrain_Master_AA53
+  m_EditorClassIdentifier: Assembly-CSharp::PropTileData
+  coord: {x: 26, y: 52}
+  tileOrigin: {x: 2031.25, y: -2, z: 4062.5}
+  tileSize: {x: 78.125, y: 1000, z: 78.125}
+  groups:
+  - prefab: {fileID: 8385871199121955878, guid: 731bfce3ae05dd84c8d597ad003f90c8, type: 3}
+    transforms:
+    - localPosition: {x: 18.310059, y: 59.82894, z: 39.27002}
+      localRotation: {x: -0, y: -0.1502085, z: -0, w: 0.9886543}
+      localScale: {x: 1, y: 1, z: 1}
+    - localPosition: {x: 18.77002, y: 59.82894, z: 37.20996}
+      localRotation: {x: -0, y: -0.062707044, z: -0, w: 0.998032}
+      localScale: {x: 1, y: 1, z: 1}
+    - localPosition: {x: 18.836914, y: 59.82894, z: 35.13916}
+      localRotation: {x: -0, y: 0.05018959, z: -0, w: 0.9987397}
+      localScale: {x: 1.0000001, y: 1, z: 1.0000001}
+  - prefab: {fileID: 1852250462566836091, guid: cfde5ede4e4f2d94283080452148b743, type: 3}
+    transforms:
+    - localPosition: {x: 3.7504883, y: 59.5, z: 33.05005}
+      localRotation: {x: -0.012978446, y: 0.000111551126, z: 0.00000029832594, w: 0.9999158}
+      localScale: {x: 1, y: 1, z: 1}
+  - prefab: {fileID: 8128240714911673486, guid: c598fde42bf9cb941befa1a4f2915924, type: 3}
+    transforms:
+    - localPosition: {x: 19.820068, y: 59.76683, z: 11.320068}
+      localRotation: {x: -0, y: -0.3435569, z: -0, w: 0.93913186}
+      localScale: {x: 1, y: 1, z: 1}
+    - localPosition: {x: 16.75, y: 60.780426, z: 75.8999}
+      localRotation: {x: -0, y: -0.65307206, z: -0, w: 0.7572958}
+      localScale: {x: 1, y: 1, z: 1}
+  - prefab: {fileID: 8943019165692843693, guid: ab3b8f4178c4e694385348cb487a741a, type: 3}
+    transforms:
+    - localPosition: {x: 25.571045, y: 59.904884, z: 32.757324}
+      localRotation: {x: -0, y: -0.6782033, z: -0, w: 0.7348744}
+      localScale: {x: 1.0000002, y: 1, z: 1.0000002}
+    - localPosition: {x: 20.352783, y: 60.111023, z: 49.939453}
+      localRotation: {x: -0, y: -0.87663627, z: -0, w: 0.4811537}
+      localScale: {x: 1, y: 1, z: 1}

@@ -17,63 +17,63 @@ MonoBehaviour:
   - label: Terrain_Master
     origin: {x: 0, y: -2, z: 0}
     size: {x: 5000, y: 1000, z: 5000}
-    tilesX: 16
-    tilesY: 16
-    tileSizeX: 312.5
-    tileSizeY: 312.5
+    tilesX: 64
+    tilesY: 64
+    tileSizeX: 78.125
+    tileSizeY: 78.125
   - label: Terrain_North
     origin: {x: 0, y: -2, z: 5000}
     size: {x: 5000, y: 1000, z: 256}
-    tilesX: 16
-    tilesY: 1
-    tileSizeX: 312.5
-    tileSizeY: 256
+    tilesX: 64
+    tilesY: 4
+    tileSizeX: 78.125
+    tileSizeY: 64
   - label: Terrain_East
     origin: {x: 5000, y: -2, z: 0}
     size: {x: 256, y: 1000, z: 5000}
-    tilesX: 1
-    tilesY: 16
-    tileSizeX: 256
-    tileSizeY: 312.5
+    tilesX: 4
+    tilesY: 64
+    tileSizeX: 64
+    tileSizeY: 78.125
   - label: Terrain_South
     origin: {x: 0, y: -2, z: -255.99997}
     size: {x: 5000, y: 1000, z: 256}
-    tilesX: 16
-    tilesY: 1
-    tileSizeX: 312.5
-    tileSizeY: 256
+    tilesX: 64
+    tilesY: 4
+    tileSizeX: 78.125
+    tileSizeY: 64
   - label: Terrain_West
     origin: {x: -256, y: -2, z: 0}
     size: {x: 256, y: 1000, z: 5000}
-    tilesX: 1
-    tilesY: 16
-    tileSizeX: 256
-    tileSizeY: 312.5
+    tilesX: 4
+    tilesY: 64
+    tileSizeX: 64
+    tileSizeY: 78.125
   - label: Terrain_NorthEast
     origin: {x: 5000, y: -2, z: 5000}
     size: {x: 256, y: 1000, z: 256}
-    tilesX: 1
-    tilesY: 1
-    tileSizeX: 256
-    tileSizeY: 256
+    tilesX: 4
+    tilesY: 4
+    tileSizeX: 64
+    tileSizeY: 64
   - label: Terrain_NorthWest
     origin: {x: -256, y: -2, z: 5000}
     size: {x: 256, y: 1000, z: 256}
-    tilesX: 1
-    tilesY: 1
-    tileSizeX: 256
-    tileSizeY: 256
+    tilesX: 4
+    tilesY: 4
+    tileSizeX: 64
+    tileSizeY: 64
   - label: Terrain_SouthEast
     origin: {x: 5000, y: -2, z: -255.99997}
     size: {x: 256, y: 1000, z: 256}
-    tilesX: 1
-    tilesY: 1
-    tileSizeX: 256
-    tileSizeY: 256
+    tilesX: 4
+    tilesY: 4
+    tileSizeX: 64
+    tileSizeY: 64
   - label: Terrain_SouthWest
     origin: {x: -256, y: -2, z: -255.99997}
     size: {x: 256, y: 1000, z: 256}
-    tilesX: 1
-    tilesY: 1
-    tileSizeX: 256
-    tileSizeY: 256
+    tilesX: 4
+    tilesY: 4
+    tileSizeX: 64
+    tileSizeY: 64

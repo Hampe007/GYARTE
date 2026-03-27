@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26ba79b91b4a43d899faf376128c91c0, type: 3}
+  m_Name: Props_Terrain_Master_AA54
+  m_EditorClassIdentifier: Assembly-CSharp::PropTileData
+  coord: {x: 26, y: 53}
+  tileOrigin: {x: 2031.25, y: -2, z: 4140.625}
+  tileSize: {x: 78.125, y: 1000, z: 78.125}
+  groups:
+  - prefab: {fileID: 8943019165692843693, guid: ab3b8f4178c4e694385348cb487a741a, type: 3}
+    transforms:
+    - localPosition: {x: 18.260986, y: 61.394638, z: 12.618164}
+      localRotation: {x: -0, y: -0.63630843, z: -0, w: 0.77143484}
+      localScale: {x: 1.0000002, y: 1, z: 1.0000002}
+    - localPosition: {x: 22.841797, y: 62.378433, z: 31.547852}
+      localRotation: {x: -0, y: -0.8278091, z: -0, w: 0.5610099}
+      localScale: {x: 1, y: 1, z: 1}
+    - localPosition: {x: 4.727051, y: 62.52436, z: 39.68213}
+      localRotation: {x: -0, y: -0.9999926, z: -0, w: -0.0038467045}
+      localScale: {x: 1.0000001, y: 1, z: 1.0000001}

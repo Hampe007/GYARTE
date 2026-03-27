@@ -13,11 +13,6 @@ MonoBehaviour:
   m_Name: Props_Terrain_South_A1
   m_EditorClassIdentifier: Assembly-CSharp::PropTileData
   coord: {x: 0, y: 0}
-  tileOrigin: {x: 0, y: -2, z: -255.99997}
-  tileSize: {x: 312.5, y: 1000, z: 256}
-  groups:
-  - prefab: {fileID: 4176195992023163196, guid: 05b448306cc13394eaf92da31964315d, type: 3}
-    transforms:
-    - localPosition: {x: 0, y: 2, z: 255.99997}
-      localRotation: {x: -0, y: -0, z: -0, w: 1}
-      localScale: {x: 1, y: 1, z: 1}
+  tileOrigin: {x: 0, y: 0, z: 0}
+  tileSize: {x: 0, y: 0, z: 0}
+  groups: []

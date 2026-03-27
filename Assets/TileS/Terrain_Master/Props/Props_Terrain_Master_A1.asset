@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PropTileData
   coord: {x: 0, y: 0}
   tileOrigin: {x: 0, y: -2, z: 0}
-  tileSize: {x: 312.5, y: 1000, z: 312.5}
+  tileSize: {x: 78.125, y: 1000, z: 78.125}
   groups:
   - prefab: {fileID: 4176195992023163196, guid: 05b448306cc13394eaf92da31964315d, type: 3}
     transforms:

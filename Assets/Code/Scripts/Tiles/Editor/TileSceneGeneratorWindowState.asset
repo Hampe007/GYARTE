@@ -19,13 +19,13 @@ MonoBehaviour:
   sourceTerrains: []
   masterTerrainLabelOverride: Terrain_Master
   autoFixDivisibility: 1
-  tileSizeMeters: 250
+  tileSizeMeters: 75
   masterTerrainNameContains: Master
   masterForceSquareTiles: 1
   evenFitNoRemainder: 1
   forceSquareTiles: 1
-  maxTilesPerAxis: 128
-  maxTilesPerTerrain: 4096
+  maxTilesPerAxis: 512
+  maxTilesPerTerrain: 16384
   sceneNamePattern: '{t}_{tile}'
   outputFolder: Assets/Tiles
   terrainDataPrefix: TD_
@@ -39,3 +39,7 @@ MonoBehaviour:
   onlyUpdateIfChanged: 0
   addToBuildSettings: 1
   clearConsoleBeforeActions: 1
+  hasSliceResumeCheckpoint: 0
+  resumeTerrainIndex: 0
+  resumeTileFlatIndex: 0
+  resumeTerrainLabel: 

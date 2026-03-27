@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26ba79b91b4a43d899faf376128c91c0, type: 3}
+  m_Name: Props_Terrain_South_A4
+  m_EditorClassIdentifier: Assembly-CSharp::PropTileData
+  coord: {x: 0, y: 3}
+  tileOrigin: {x: 0, y: -2, z: -63.99997}
+  tileSize: {x: 78.125, y: 1000, z: 64}
+  groups:
+  - prefab: {fileID: 4176195992023163196, guid: 05b448306cc13394eaf92da31964315d, type: 3}
+    transforms:
+    - localPosition: {x: 0, y: 2, z: 63.99997}
+      localRotation: {x: -0, y: -0, z: -0, w: 1}
+      localScale: {x: 1, y: 1, z: 1}
