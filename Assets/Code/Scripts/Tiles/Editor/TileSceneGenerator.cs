@@ -97,14 +97,14 @@ public sealed class TileSceneGenerator : ScriptableObject
 
     private sealed class PropCandidateCache
     {
-        private readonly Dictionary<Vector2Int, List<GameObject>> _tileBins;
-        private static readonly List<GameObject> Empty = new(0);
+        private readonly Dictionary<Vector2Int, List<PropCandidate>> _tileBins;
+        private static readonly List<PropCandidate> Empty = new(0);
 
         public int TotalCandidates { get; }
 
-        public PropCandidateCache(List<GameObject> candidates, Vector3 terrainOrigin, Vector3 tileSize, int tileCountX, int tileCountY)
+        public PropCandidateCache(List<PropCandidate> candidates, Vector3 terrainOrigin, Vector3 tileSize, int tileCountX, int tileCountY)
         {
-            _tileBins = new Dictionary<Vector2Int, List<GameObject>>(Mathf.Max(1, tileCountX * tileCountY));
+            _tileBins = new Dictionary<Vector2Int, List<PropCandidate>>(Mathf.Max(1, tileCountX * tileCountY));
             if (candidates == null || candidates.Count == 0)
             {
                 TotalCandidates = 0;
@@ -115,9 +115,9 @@ public sealed class TileSceneGenerator : ScriptableObject
 
             foreach (var candidate in candidates)
             {
-                if (candidate == null) continue;
+                if (candidate == null || candidate.root == null) continue;
 
-                Vector3 p = candidate.transform.position;
+                Vector3 p = candidate.ownerPoint;
                 int tx = Mathf.FloorToInt((p.x - terrainOrigin.x) / tileSize.x);
                 int ty = Mathf.FloorToInt((p.z - terrainOrigin.z) / tileSize.z);
 
@@ -127,7 +127,7 @@ public sealed class TileSceneGenerator : ScriptableObject
                 var key = new Vector2Int(tx, ty);
                 if (!_tileBins.TryGetValue(key, out var list))
                 {
-                    list = new List<GameObject>();
+                    list = new List<PropCandidate>();
                     _tileBins.Add(key, list);
                 }
 
@@ -135,10 +135,16 @@ public sealed class TileSceneGenerator : ScriptableObject
             }
         }
 
-        public List<GameObject> GetTileCandidates(int tx, int ty)
+        public List<PropCandidate> GetTileCandidates(int tx, int ty)
         {
             return _tileBins.TryGetValue(new Vector2Int(tx, ty), out var list) ? list : Empty;
         }
+    }
+
+    private sealed class PropCandidate
+    {
+        public GameObject root;
+        public Vector3 ownerPoint;
     }
     
     public bool IsRunning => _isRunning;
@@ -2121,11 +2127,12 @@ public sealed class TileSceneGenerator : ScriptableObject
         float minZ = tileOrigin.z;
         float maxZ = minZ + tileSize.z;
 
-        foreach (var go in candidates)
+        foreach (var candidate in candidates)
         {
+            var go = candidate?.root;
             if (go == null) continue;
 
-            Vector3 p = go.transform.position;
+            Vector3 p = candidate.ownerPoint;
             if (p.x < minX || p.x >= maxX) continue;
             if (p.z < minZ || p.z >= maxZ) continue;
 
@@ -2145,7 +2152,7 @@ public sealed class TileSceneGenerator : ScriptableObject
             if (clone == null) continue;
 
             clone.transform.SetParent(propRoot.transform, false);
-            clone.transform.localPosition = p - tileOrigin;
+            clone.transform.localPosition = go.transform.position - tileOrigin;
             clone.transform.localRotation = go.transform.rotation;
             clone.transform.localScale = go.transform.lossyScale;
 
@@ -2180,12 +2187,14 @@ public sealed class TileSceneGenerator : ScriptableObject
         }
     }
 
-    private List<GameObject> CollectPropCandidates(Scene masterScene)
+    private List<PropCandidate> CollectPropCandidates(Scene masterScene)
     {
-        var results = new List<GameObject>(256);
+        var results = new List<PropCandidate>(256);
         var seen = new HashSet<GameObject>();
+        var sceneRoots = masterScene.GetRootGameObjects();
+        var terrainBounds = BuildTerrainWorldBounds(masterScene);
 
-        foreach (var root in masterScene.GetRootGameObjects())
+        foreach (var root in sceneRoots)
         {
             if (root == null) continue;
 
@@ -2194,19 +2203,173 @@ public sealed class TileSceneGenerator : ScriptableObject
                 if (marker == null) continue;
                 var candidate = PrefabUtility.GetOutermostPrefabInstanceRoot(marker.gameObject) ?? marker.gameObject;
                 if (candidate != null && candidate.scene == masterScene && seen.Add(candidate))
-                    results.Add(candidate);
+                {
+                    results.Add(new PropCandidate
+                    {
+                        root = candidate,
+                        ownerPoint = candidate.transform.position
+                    });
+                }
             }
+        }
 
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+        foreach (var root in sceneRoots)
+        {
+            if (root == null) continue;
+            if (string.Equals(root.name, "TerrainPropRoot", StringComparison.OrdinalIgnoreCase)) continue;
+            if (root.name.StartsWith(TileRuntimeConstants.PropRootPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (t == null) continue;
-                var outer = PrefabUtility.GetOutermostPrefabInstanceRoot(t.gameObject);
-                if (outer != null && outer.scene == masterScene && seen.Add(outer))
-                    results.Add(outer);
+                if (renderer == null || !renderer.enabled) continue;
+
+                var candidateRoot = FindManualCandidateRoot(renderer.transform, root);
+                if (candidateRoot == null) continue;
+
+                var candidate = candidateRoot.gameObject;
+                if (candidate.scene != masterScene) continue;
+                if (seen.Contains(candidate)) continue;
+                if (candidate.GetComponentInChildren<TileProp>(true) != null) continue; // existing prop placer / marker path
+                if (IsInsideNamedRoot(candidate.transform, "TerrainPropRoot")) continue; // prop placer hierarchy
+                if (!HasAnyStaticFlags(candidate)) continue; // constrain to authored static environment
+                if (HasDisallowedComponents(candidate)) continue;
+                if (!TryCalculateRenderableBounds(candidate, out var candidateBounds)) continue;
+                if (!terrainBounds.Intersects(candidateBounds)) continue;
+                if (!seen.Add(candidate)) continue;
+
+                results.Add(new PropCandidate
+                {
+                    root = candidate,
+                    ownerPoint = candidateBounds.center
+                });
             }
         }
 
         return results;
+    }
+
+    private static Transform FindManualCandidateRoot(Transform start, GameObject sceneRoot)
+    {
+        if (start == null) return null;
+
+        Transform chosen = start;
+        Transform current = start;
+        while (current != null && current.gameObject != sceneRoot)
+        {
+            if (current.GetComponent<TileProp>() != null)
+                return null;
+
+            Transform parent = current.parent;
+            if (parent == null || parent.gameObject == sceneRoot)
+                break;
+
+            if (HasDisallowedComponents(parent.gameObject))
+                break;
+
+            chosen = parent;
+            current = parent;
+        }
+
+        var prefabRoot = PrefabUtility.GetOutermostPrefabInstanceRoot(chosen.gameObject);
+        return prefabRoot != null ? prefabRoot.transform : chosen;
+    }
+
+    private static bool TryCalculateRenderableBounds(GameObject candidate, out Bounds bounds)
+    {
+        var renderers = candidate.GetComponentsInChildren<Renderer>(true);
+        bounds = default;
+        bool hasBounds = false;
+
+        foreach (var renderer in renderers)
+        {
+            if (renderer == null || !renderer.enabled)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+                continue;
+            }
+
+            bounds.Encapsulate(renderer.bounds.min);
+            bounds.Encapsulate(renderer.bounds.max);
+        }
+
+        return hasBounds;
+    }
+
+    private static bool IsInsideNamedRoot(Transform t, string rootName)
+    {
+        while (t != null)
+        {
+            if (string.Equals(t.name, rootName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            t = t.parent;
+        }
+
+        return false;
+    }
+
+    private static bool HasAnyStaticFlags(GameObject go)
+    {
+        if (go == null) return false;
+        if (GameObjectUtility.GetStaticEditorFlags(go) != 0)
+            return true;
+
+        foreach (var t in go.GetComponentsInChildren<Transform>(true))
+        {
+            if (t != null && GameObjectUtility.GetStaticEditorFlags(t.gameObject) != 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasDisallowedComponents(GameObject go)
+    {
+        return go.GetComponent<Terrain>() != null
+               || go.GetComponent<Light>() != null
+               || go.GetComponent<Camera>() != null
+               || go.GetComponent<AudioListener>() != null
+               || go.GetComponent<Canvas>() != null
+               || go.GetComponent<UnityEngine.EventSystems.EventSystem>() != null;
+    }
+
+    private static Bounds BuildTerrainWorldBounds(Scene scene)
+    {
+        Bounds terrainBounds = default;
+        bool hasBounds = false;
+
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            if (root == null) continue;
+
+            foreach (var terrain in root.GetComponentsInChildren<Terrain>(true))
+            {
+                if (terrain == null || terrain.terrainData == null) continue;
+                Vector3 size = terrain.terrainData.size;
+                var worldBounds = new Bounds(
+                    terrain.transform.position + new Vector3(size.x * 0.5f, size.y * 0.5f, size.z * 0.5f),
+                    size);
+
+                if (!hasBounds)
+                {
+                    terrainBounds = worldBounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    terrainBounds.Encapsulate(worldBounds.min);
+                    terrainBounds.Encapsulate(worldBounds.max);
+                }
+            }
+        }
+
+        if (!hasBounds)
+            terrainBounds = new Bounds(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue));
+
+        return terrainBounds;
     }
 
     private TerrainData BuildTileTerrainData(
